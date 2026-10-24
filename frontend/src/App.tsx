@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Bundle } from "./types";
 import MapView from "./MapView";
 import TimelineChart from "./TimelineChart";
@@ -14,7 +14,7 @@ function fmt(n: number | null | undefined, digits = 0): string {
 
 function gallonsPerDay(cfs: number | null | undefined): string {
   if (cfs == null) return "—";
-  return `${fmt(Math.abs(cfs) * GALLONS_PER_CFS_DAY / 1_000_000, 0)} million gal/day`;
+  return `${fmt(Math.abs(cfs) * GALLONS_PER_CFS_DAY / 1_000_000, 0)}M gallons/day`;
 }
 
 function openDemo() {
@@ -29,7 +29,7 @@ function closeDemo() {
 function Landing({ bundle }: { bundle: Bundle }) {
   const excess = bundle.headline.excess_loss_7d_cfs;
   const shortfall = bundle.headline.worst_node_shortfall;
-  const acreFeetWeek = excess * ACRE_FEET_PER_CFS_DAY * 7;
+  const acreFeetDay = excess * ACRE_FEET_PER_CFS_DAY;
 
   return (
     <main className="landing">
@@ -44,13 +44,13 @@ function Landing({ bundle }: { bundle: Bundle }) {
       <section className="hero">
         <div className="hero-copy">
           <div className="eyebrow"><span /> Water intelligence for the Central Valley</div>
-          <h1>Find water loss<br />before it reaches<br /><em>the field.</em></h1>
+          <h1>Flag unusual water loss before downstream <em>farm deliveries are affected.</em></h1>
           <p className="hero-lede">
-            SeepWatch compares flow between gauges, learns what “normal” looks like,
-            and flags unusual losses early—so water teams know where to look first.
+            SeepWatch compares flow between paired gauges, learns the expected range,
+            and prioritizes unusual loss signals for field review.
           </p>
           <button type="button" className="primary-cta" onClick={openDemo}>
-            View live demo <span aria-hidden="true">→</span>
+            View corridor forecast demo <span aria-hidden="true">→</span>
           </button>
           <p className="cta-note">Interactive SJRRP corridor demonstration · no sign-in</p>
         </div>
@@ -62,12 +62,12 @@ function Landing({ bundle }: { bundle: Bundle }) {
             <div className="canal-flow" />
             <span className="sensor sensor-a"><i /> Gauge A</span>
             <span className="sensor sensor-b"><i /> Gauge B</span>
-            <span className="leak-pulse"><i /> Unusual loss detected</span>
+            <span className="leak-pulse"><i /> Unusual loss signal</span>
           </div>
           <div className="visual-card">
-            <span>Demonstration signal</span>
-            <strong>{fmt(excess)} cubic ft/sec</strong>
-            <small>above normal loss · about {gallonsPerDay(excess)}</small>
+            <span>Corridor forecast signal</span>
+            <strong>{gallonsPerDay(excess)}</strong>
+            <small>{fmt(excess)} cubic feet per second (cfs) · {fmt(acreFeetDay)} acre-feet/day</small>
           </div>
         </div>
       </section>
@@ -80,33 +80,33 @@ function Landing({ bundle }: { bundle: Bundle }) {
             <h2 id="impact-title">Every missing drop has a destination.</h2>
           </div>
           <p>
-            A loss between two gauges can mean less water downstream, delayed
-            deliveries, and crews searching miles of channel. SeepWatch turns
-            existing flow readings into a prioritized field check.
+            An unusual balance between two gauges may reflect seepage, operations,
+            diversions, or gauge error. SeepWatch prioritizes the signal for review
+            and estimates potential downstream effects without claiming a confirmed leak.
           </p>
         </div>
 
         <div className="impact-grid">
           <article className="impact-card alert-card">
             <span className="impact-icon">!</span>
-            <p>Current demo flag</p>
-            <strong>{fmt(excess)}</strong>
-            <h3>cubic feet per second above normal</h3>
-            <small>Equivalent to roughly {gallonsPerDay(excess)}.</small>
+            <p>Reach 2A unusual signal</p>
+            <strong>{fmt(excess)} cfs</strong>
+            <h3>{gallonsPerDay(excess)} above normal</h3>
+            <small>Also about {fmt(acreFeetDay)} acre-feet per day. This is an unusual loss signal, not a confirmed leak.</small>
           </article>
           <article className="impact-card">
             <span className="impact-icon">≈</span>
-            <p>One week at that rate</p>
-            <strong>{fmt(acreFeetWeek)}</strong>
-            <h3>acre-feet of water</h3>
-            <small>About {fmt(acreFeetWeek * 325_851 / 1_000_000, 0)} million gallons.</small>
+            <p>Held-out forecast accuracy</p>
+            <strong>0.9%</strong>
+            <h3>lower error overall vs persistence</h3>
+            <small>At days 5–7, error was 7.7%, 8.9%, and 8.9% lower. Held-out 2025–2026 SJRRP corridor evaluation.</small>
           </article>
           <article className="impact-card">
             <span className="impact-icon">↓</span>
             <p>Downstream effect</p>
-            <strong>{fmt(shortfall.p50)}</strong>
-            <h3>cubic feet per second below expected</h3>
-            <small>Median modeled shortfall at {shortfall.name}.</small>
+            <strong>{fmt(shortfall.p50)} cfs</strong>
+            <h3>median modeled shortfall at {shortfall.name}</h3>
+            <small>Central 80% modeled range: {fmt(shortfall.p10)}–{fmt(shortfall.p90)} cfs.</small>
           </article>
         </div>
       </section>
@@ -130,12 +130,10 @@ function Landing({ bundle }: { bundle: Bundle }) {
           <h2>Measured here. Designed to travel.</h2>
           <p>
             Current validation uses public paired-gauge data from the San Joaquin River
-            Restoration Program (SJRRP) corridor. We have not validated the model on all
-            Central Valley irrigation canals. The demo map is schematic, forecasts and
-            downstream effects are modeled, and broader canal use is illustrative until
-            a district connects and validates its own gauge data.
+            Restoration Program (SJRRP) corridor—not district canals. Unexplained loss
+            can include operations, diversions, seepage, or gauge error. The map is
+            schematic, and forecasts and downstream effects are modeled.
           </p>
-          <button type="button" className="text-link" onClick={openDemo}>Explore the labeled demo →</button>
         </div>
       </section>
 
@@ -150,6 +148,7 @@ function Landing({ bundle }: { bundle: Bundle }) {
 function Demo({ bundle }: { bundle: Bundle }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const returnFocusRef = useRef<HTMLElement | null>(null);
   const shortfallByNode = useMemo(() => {
     const values = new Map<string, Bundle["nodes_shortfall"][0]>();
     bundle.nodes_shortfall.forEach((node) => values.set(node.node_id, node));
@@ -160,8 +159,10 @@ function Demo({ bundle }: { bundle: Bundle }) {
   const closeDrawer = () => {
     setDrawerOpen(false);
     setSelected(null);
+    window.setTimeout(() => returnFocusRef.current?.focus(), 0);
   };
   const select = (id: string) => {
+    returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setSelected(id);
     setDrawerOpen(true);
   };
@@ -172,7 +173,7 @@ function Demo({ bundle }: { bundle: Bundle }) {
         <button type="button" className="back-button" onClick={closeDemo} aria-label="Back to overview">←</button>
         <div className="demo-brand">
           <span className="brand-mark">S</span>
-          <div><strong>SeepWatch</strong><small>Live corridor demo</small></div>
+          <div><strong>SeepWatch</strong><small>Corridor forecast demo</small></div>
         </div>
         <div className="demo-status"><i /> Data through {bundle.meta.asof}</div>
         <button type="button" className="about-button" onClick={closeDemo}>About the problem</button>
@@ -187,13 +188,13 @@ function Demo({ bundle }: { bundle: Bundle }) {
         <div className="demo-metrics">
           <article className="signal">
             <span>Unusual loss signal</span>
-            <strong>{fmt(excess)} <small>cubic ft/sec</small></strong>
-            <p>≈ {gallonsPerDay(excess)} above expected</p>
+            <strong>{gallonsPerDay(excess)}</strong>
+            <p>{fmt(excess)} cfs · {fmt(excess * ACRE_FEET_PER_CFS_DAY)} acre-feet/day above normal</p>
           </article>
           <article>
             <span>Most affected location</span>
             <strong>{worst.name}</strong>
-            <p>≈ {fmt(worst.p50)} cubic ft/sec below expected</p>
+            <p>{fmt(worst.p50)} cfs median shortfall · central 80%: {fmt(worst.p10)}–{fmt(worst.p90)}</p>
           </article>
           <article>
             <span>Forecast window</span>
@@ -220,7 +221,7 @@ function Demo({ bundle }: { bundle: Bundle }) {
             <div className="map-hint">Select a colored route or labeled node</div>
             <div className="map-legend">
               <strong>Route condition</strong>
-              <div className="legend-row"><span className="swatch high" /> Unusual loss detected</div>
+              <div className="legend-row"><span className="swatch high" /> Priority · unusual loss signal</div>
               <div className="legend-row"><span className="swatch elevated" /> Elevated loss</div>
               <div className="legend-row"><span className="swatch normal" /> Within expected range</div>
               <div className="legend-row"><span className="swatch unavailable" /> No reliable forecast</div>
@@ -235,28 +236,38 @@ function Demo({ bundle }: { bundle: Bundle }) {
 
         <aside className="analysis-panel">
           <div className="analysis-heading">
-            <div><span className="kicker">Priority checks</span><h2>Leak detection watchlist</h2></div>
-            <span>{bundle.watchlist.length} routes</span>
+            <div><span className="kicker">Priority checks</span><h2>Unusual loss watchlist</h2></div>
+            <span>{bundle.reach_colors.length} routes</span>
           </div>
           <div className="watch-list">
-            {bundle.watchlist.map((item, index) => {
-              const reach = bundle.reach_colors.find((r) => r.id === item.reach_id);
-              const flagged = item.anomaly || item.excess_loss_cfs > 8;
+            {bundle.reach_colors.map((reach, index) => {
+              const item = bundle.watchlist.find((w) => w.reach_id === reach.id);
+              const flagged = reach.status === "flagged";
+              const noForecast = reach.status === "no_forecast" || reach.status === "flood_no_forecast";
+              const forecast = Math.abs(reach.forecast_loss_cfs ?? item?.forecast_loss_cfs ?? 0);
+              const normal = Math.abs(reach.normal_loss_cfs ?? item?.normal_loss_cfs ?? 0);
+              const difference = Math.max(0, reach.excess_loss_cfs ?? item?.excess_loss_cfs ?? 0);
               return (
                 <button
                   type="button"
-                  key={item.reach_id}
-                  className={`watch-card ${flagged ? "flagged" : ""}`}
-                  onClick={() => select(item.reach_id)}
+                  key={reach.id}
+                  className={`watch-card ${flagged ? "flagged" : ""} ${noForecast ? "restrained" : ""}`}
+                  onClick={() => select(reach.id)}
                 >
                   <span className="watch-index">{String(index + 1).padStart(2, "0")}</span>
                   <span className="watch-copy">
-                    <strong>{reach?.name.replace(/\s*\(.*/, "") ?? item.reach_id}</strong>
-                    <small>{item.label === "measured" ? "Measured gauge balance" : "Context / unexplained balance"}</small>
+                    <strong>{reach.name.replace(/\s*\(.*/, "")} · {reach.id}</strong>
+                    <small>{reach.label === "measured" ? "Measured gauge balance" : "Context / unexplained balance"}</small>
                   </span>
                   <span className="watch-reading">
-                    <strong>{flagged ? `${fmt(Math.max(0, item.excess_loss_cfs))} above normal` : "Within range"}</strong>
-                    <small>{flagged ? gallonsPerDay(item.excess_loss_cfs) : "No unusual loss signal"}</small>
+                    <strong>{noForecast ? "No reliable forecast" : flagged ? `Priority · ${fmt(difference)} cfs unusual` : "Within expected range"}</strong>
+                    <small>
+                      {noForecast
+                        ? "Signal is at the gauge noise floor"
+                        : flagged
+                          ? `Forecast loss ${fmt(forecast)} · normal ${fmt(normal)} · difference ${fmt(difference)} cfs`
+                          : "No unusual loss signal"}
+                    </small>
                   </span>
                   <span className="watch-arrow">›</span>
                 </button>
@@ -270,7 +281,7 @@ function Demo({ bundle }: { bundle: Bundle }) {
               <div className="trend-key"><i /> observed <i /> expected range</div>
             </div>
             <div className="chart-wrap"><TimelineChart data={bundle.timeline} /></div>
-            <p>Red points mark repeated unusual readings. Shading shows the model’s 80% expected range.</p>
+            <p>Red points mark repeated unusual readings. Shading is the central 80% range—the middle 80 of 100 modeled outcomes.</p>
           </div>
 
           <button type="button" className="evidence-row" onClick={() => select("evidence")}>
@@ -282,7 +293,7 @@ function Demo({ bundle }: { bundle: Bundle }) {
 
       <div className="demo-honesty">
         <strong>What is real in this demo?</strong>
-        <span>SJRRP gauge measurements and held-out evaluation are real. Forecasts are modeled; corridor geometry is schematic. This is not yet validated district-canal data.</span>
+        <span>Validated on the SJRRP corridor—not district canals. Forecasts are modeled and geometry is schematic. Unexplained loss can include operations, diversions, seepage, or gauge error.</span>
       </div>
 
       {drawerOpen && (

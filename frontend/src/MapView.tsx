@@ -234,6 +234,7 @@ export default function MapView({
         el.dataset.reachId = r.id;
         el.textContent = r.id;
         el.title = `${r.name} (click for details)`;
+        el.setAttribute("aria-label", `${r.name}, route ${r.id}. Open forecast details.`);
         el.style.cssText = [
           "background:rgba(255,254,249,0.96)",
           "color:#10231f",
@@ -267,6 +268,7 @@ export default function MapView({
         el.dataset.nodeId = n.id;
         el.textContent = n.name;
         el.title = `${n.name}: click for modeled downstream effect`;
+        el.setAttribute("aria-label", `${n.name}, node ${n.id}. Open modeled downstream effect.`);
         el.style.cssText = [
           "background:rgba(255,254,249,0.96)",
           "color:#10231f",

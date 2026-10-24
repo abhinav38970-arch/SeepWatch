@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import type { Bundle } from "./types";
 import TimelineChart from "./TimelineChart";
 
@@ -19,11 +20,22 @@ function fmtRange(lo: number | null | undefined, hi: number | null | undefined, 
 
 function fmtBalance(n: number | null | undefined, d = 1): string {
   if (n == null || Number.isNaN(n)) return "—";
-  if (n > 0) return `+${n.toFixed(d)} cubic ft/sec (gain)`;
-  return `${n.toFixed(d)} cubic ft/sec`;
+  if (n > 0) return `${n.toFixed(d)} cubic ft/sec gain`;
+  return `${Math.abs(n).toFixed(d)} cubic ft/sec loss`;
 }
 
 export default function DetailDrawer({ bundle, selected, onClose }: Props) {
+  const closeRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    closeRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [onClose, selected]);
+
   if (selected === "evidence") {
     const dep = bundle.evidence.deployable;
     const horizons = dep?.horizons ?? {};
@@ -37,17 +49,17 @@ export default function DetailDrawer({ bundle, selected, onClose }: Props) {
       .slice(0, 6);
 
     return (
-      <div className="drawer">
+      <div className="drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
         <header>
           <div>
-            <h3>Evidence &amp; Pre-Registered Evaluation</h3>
+            <h3 id="drawer-title">Evidence &amp; Pre-Registered Evaluation</h3>
             <div className="watch-meta">
-              Technical evidence · Pitch {bundle.pitch_scenario} · {bundle.pitch_key} · held-out 80% coverage{" "}
+              Held-out central 80% range coverage{" "}
               {fmt((cov?.coverage_corrected ?? 0) * 100, 1)}% (2024 calib{" "}
               {fmt((cov?.calib_2024_raw ?? 0) * 100, 1)}%)
             </div>
           </div>
-          <button type="button" onClick={onClose}>Close</button>
+          <button ref={closeRef} type="button" onClick={onClose}>Close</button>
         </header>
 
         <p className="watch-meta" style={{ marginTop: 10 }}>
@@ -55,6 +67,8 @@ export default function DetailDrawer({ bundle, selected, onClose }: Props) {
           Train {bundle.evidence.train_rows.toLocaleString()} / test{" "}
           {bundle.evidence.test_rows.toLocaleString()} reach-horizon rows. Model mean MAE{" "}
           {fmt(dep?.model_mae, 1)} cubic ft/sec vs {dep?.best_baseline} {fmt(dep?.best_baseline_mae, 1)} cubic ft/sec.
+          Overall error was {fmt((dep?.skill_vs_best ?? 0) * 100, 1)}% lower than persistence;
+          days 5–7 were 7.7%, 8.9%, and 8.9% lower.
         </p>
 
         <h2 style={{ marginTop: 14, fontSize: "0.75rem", color: "var(--muted)" }}>
@@ -195,43 +209,43 @@ export default function DetailDrawer({ bundle, selected, onClose }: Props) {
   const reachFar = selected ? bundle.evidence.false_alarm_rate?.[selected] : undefined;
 
   return (
-    <div className="drawer">
+    <div className="drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
       <header>
         <div>
-          <h3>{reach?.name ?? node?.name ?? selected}</h3>
+          <h3 id="drawer-title">{reach?.name ?? node?.name ?? selected}</h3>
           <div className="watch-meta">
             {reach ? `Data basis: ${reach.label.replaceAll("_", " ")}` : node ? `Modeled downstream effect · ${node.provenance ?? "measured"}` : ""}
           </div>
         </div>
-        <button type="button" onClick={onClose}>Close</button>
+        <button ref={closeRef} type="button" onClick={onClose}>Close</button>
       </header>
 
       {reach && (
         <div className="kv">
           <span>Status</span>
-          <span>{reach.status.replaceAll("_", " ")}</span>
+          <span>{reach.status === "flagged" ? "Priority · unusual loss signal" : reach.status === "no_forecast" ? "No reliable forecast" : "Within expected range"}</span>
           {reach.reason && (
             <>
               <span>No-forecast reason</span>
               <span>{reach.reason.replaceAll("_", " ")} (~9 cubic ft/sec vs ±5% gauge noise)</span>
             </>
           )}
-          <span>Forecast balance (1–7d mean)</span>
-          <span>{fmtBalance(reach.forecast_loss_cfs ?? watch?.forecast_loss_cfs)}</span>
-          <span>Normal expected balance</span>
-          <span>{fmtBalance(reach.normal_loss_cfs ?? watch?.normal_loss_cfs)}</span>
-          <span>Excess loss vs normal</span>
-          <span>
-            {reach.excess_loss_cfs == null && watch?.excess_loss_cfs == null
-              ? "— (noise floor)"
-              : `${fmt(Math.max(0, reach.excess_loss_cfs ?? watch?.excess_loss_cfs ?? 0))} cubic ft/sec`}
-          </span>
-          {watch && (
+          {reach.status !== "no_forecast" && (
+            <>
+              <span>Forecast total (1–7 day mean)</span>
+              <span>{fmtBalance(reach.forecast_loss_cfs ?? watch?.forecast_loss_cfs)}</span>
+              <span>Normal expected total</span>
+              <span>{fmtBalance(reach.normal_loss_cfs ?? watch?.normal_loss_cfs)}</span>
+              <span>Unusual difference vs normal</span>
+              <span>{`${fmt(Math.max(0, reach.excess_loss_cfs ?? watch?.excess_loss_cfs ?? 0))} cubic ft/sec`}</span>
+            </>
+          )}
+          {watch && reach.status !== "no_forecast" && (
             <>
               <span>Recent observed balance</span>
               <span>{fmtBalance(watch.recent_loss_cfs)}</span>
-              <span>80% forecast band (q10–q90)</span>
-              <span>{fmtRange(watch.q10, watch.q90, 0)} cfs</span>
+              <span>Central 80% forecast range</span>
+              <span>{fmtRange(Math.abs(watch.q90), Math.abs(watch.q10), 0)} cubic ft/sec loss</span>
             </>
           )}
           {reachFar && (
