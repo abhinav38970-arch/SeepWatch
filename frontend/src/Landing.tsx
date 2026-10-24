@@ -1,5 +1,6 @@
 import type { Bundle } from "./types";
 import { cfsToMgd } from "./plainUnits";
+import ScrollBackdrop from "./ScrollBackdrop";
 import StorySections from "./StorySections";
 import { CountUp, Reveal } from "./useReveal";
 import "./landing.css";
@@ -71,6 +72,7 @@ export default function Landing({ bundle }: { bundle: Bundle }) {
 
   return (
     <div className="lp">
+      <ScrollBackdrop />
       <header className="lp-nav">
         <a className="lp-wordmark" href="#" aria-label="SeepWatch home">
           SeepWatch
@@ -133,6 +135,7 @@ export default function Landing({ bundle }: { bundle: Bundle }) {
       </section>
 
       <p className="lp-foot">Tested on real San Joaquin River data. Demo map.</p>
+      <p className="lp-credit">Photos: Alfred Twu (CC0), NASA, US Air Force, USDA</p>
     </div>
   );
 }

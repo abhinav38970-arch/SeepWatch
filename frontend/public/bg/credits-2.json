@@ -1,0 +1,28 @@
+[
+  {
+    "scene": 4,
+    "file": "scene4.webp",
+    "title": "Oroville Dam spillway in 2023",
+    "description": "Aerial view of the Oroville Dam flood-control spillway releasing water into the Feather River, California, with a rainbow in the spray.",
+    "author": "Airman 1st Class Alexis Pentzer, U.S. Air Force",
+    "sourcePage": "https://commons.wikimedia.org/wiki/File:Oroville_Dam_spillway_in_2023.jpg",
+    "fileUrl": "https://upload.wikimedia.org/wikipedia/commons/b/ba/Oroville_Dam_spillway_in_2023.jpg",
+    "license": "Public domain (US Air Force / US government work)",
+    "attributionRequired": false,
+    "suggestedCredit": "U.S. Air Force photo by Airman 1st Class Alexis Pentzer, via Wikimedia Commons",
+    "processing": "Cropped to 16:9, resized to 1920x1080, brightness 80% and saturation 75%, WebP q72."
+  },
+  {
+    "scene": 5,
+    "file": "scene5.webp",
+    "title": "Harvest (20200822-NRCS-LSC-1434)",
+    "description": "Near-sunset aerial still from video over a center-pivot irrigation system and a cotton picker harvesting at dusk, Batesville, Texas (Aug 22, 2020). Not a California location.",
+    "author": "USDA (USDAgov), NRCS",
+    "sourcePage": "https://commons.wikimedia.org/wiki/File:Harvest_(20200822-NRCS-LSC-1434).jpg",
+    "fileUrl": "https://upload.wikimedia.org/wikipedia/commons/3/3a/Harvest_%2820200822-NRCS-LSC-1434%29.jpg",
+    "license": "Public domain (US government work, USDA)",
+    "attributionRequired": false,
+    "suggestedCredit": "USDA NRCS, via Wikimedia Commons",
+    "processing": "Cropped to 16:9 region (1500x844 of the 1920x1080 original) and upscaled to 1920x1080, WebP q72."
+  }
+]

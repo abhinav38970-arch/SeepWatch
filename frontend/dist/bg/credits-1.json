@@ -1,0 +1,26 @@
+[
+  {
+    "scene": 1,
+    "file": "scene1.webp",
+    "title": "Kern County farms and California Aqueduct, aerial from west, August 2014",
+    "author": "Alfred Twu (Wikimedia Commons user Firstcultural)",
+    "sourcePage": "https://commons.wikimedia.org/wiki/File:Kern-County-farms-and-california-aqueduct-Aerial-from-west-August-2014.jpg",
+    "directFileUrl": "https://upload.wikimedia.org/wikipedia/commons/7/7f/Kern-County-farms-and-california-aqueduct-Aerial-from-west-August-2014.jpg",
+    "license": "CC0 1.0 Universal (public domain dedication)",
+    "attributionRequired": false,
+    "modifications": "Cropped to 16:9, resized to 1920x1080, contrast +15%, brightness -15%, converted to WebP q72"
+  },
+  {
+    "scene": 2,
+    "file": "scene2.webp",
+    "title": "Mojave Desert, Tehachapi Mountains, and San Joaquin Valley (California) - satellite image (Landsat 8 OLI, 1 July 2019; Bakersfield and Kern County farmland)",
+    "author": "NASA (Landsat 8 / NASA Earth Observatory, 'Cameron Ridge')",
+    "sourcePage": "https://commons.wikimedia.org/wiki/File:Mojave_Desert,_Tehachapi_Mountains,_and_San_Joaquin_Valley_(California)_%E2%80%93_satellite_image.jpg",
+    "directFileUrl": "https://upload.wikimedia.org/wikipedia/commons/c/c3/Mojave_Desert%2C_Tehachapi_Mountains%2C_and_San_Joaquin_Valley_%28California%29_%E2%80%93_satellite_image.jpg",
+    "originalPage": "https://earthobservatory.nasa.gov/images/145607/cameron-ridge",
+    "license": "Public domain (US government work, NASA)",
+    "attributionRequired": false,
+    "attributionSuggested": "NASA Earth Observatory / Landsat 8",
+    "modifications": "Cropped to the top-left San Joaquin Valley region at 16:9, resized to 1920x1080, brightness -10%, converted to WebP q50"
+  }
+]
