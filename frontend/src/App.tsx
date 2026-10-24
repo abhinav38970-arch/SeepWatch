@@ -154,6 +154,10 @@ function Demo({ bundle }: { bundle: Bundle }) {
     bundle.nodes_shortfall.forEach((node) => values.set(node.node_id, node));
     return values;
   }, [bundle]);
+  const orderedRoutes = useMemo(() => {
+    const priority: Record<string, number> = { flagged: 0, ok: 1, no_forecast: 2, flood_no_forecast: 2 };
+    return [...bundle.reach_colors].sort((a, b) => (priority[a.status] ?? 1) - (priority[b.status] ?? 1));
+  }, [bundle]);
   const excess = bundle.headline.excess_loss_7d_cfs;
   const worst = bundle.headline.worst_node_shortfall;
   const closeDrawer = () => {
@@ -240,7 +244,7 @@ function Demo({ bundle }: { bundle: Bundle }) {
             <span>{bundle.reach_colors.length} routes</span>
           </div>
           <div className="watch-list">
-            {bundle.reach_colors.map((reach, index) => {
+            {orderedRoutes.map((reach, index) => {
               const item = bundle.watchlist.find((w) => w.reach_id === reach.id);
               const flagged = reach.status === "flagged";
               const noForecast = reach.status === "no_forecast" || reach.status === "flood_no_forecast";
