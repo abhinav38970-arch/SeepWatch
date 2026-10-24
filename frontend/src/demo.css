@@ -225,8 +225,8 @@
   border-radius: 999px;
   border: 0;
   background: transparent;
-  color: #a1a1a6;
-  font-size: 14px;
+  color: #c7c7cc;
+  font-size: 15px;
   font-weight: 500;
   text-decoration: underline;
   text-underline-offset: 4px;
@@ -463,6 +463,10 @@
 .todo.is-in .todo-item {
   opacity: 1;
   transform: none;
+}
+
+.todo-item .canal-dot {
+  grid-area: auto;
 }
 
 .todo-num {

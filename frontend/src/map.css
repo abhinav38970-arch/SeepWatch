@@ -146,18 +146,109 @@
   bottom: 10px;
   z-index: 5;
   display: flex;
-  align-items: center;
-  gap: 12px;
-  max-width: none;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  max-width: calc(100% - 20px);
   padding: 5px 12px;
   font: 500 11px/1.2 Manrope, system-ui, sans-serif;
   color: #d1d5db;
   background: rgba(0, 0, 0, 0.7);
   border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 999px;
+  border-radius: 14px;
   box-shadow: none;
   backdrop-filter: blur(4px);
   white-space: nowrap;
+}
+
+.seepwatch-map-stage .map-legend-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
+.seepwatch-map-stage .map-legend-note {
+  font-size: 9.5px;
+  color: #8e8e93;
+  letter-spacing: 0.01em;
+}
+
+.seepwatch-map-stage .map-legend-v2 b {
+  display: block;
+  width: 14px;
+  height: 0;
+  border-top: 1.5px solid rgba(90, 200, 250, 0.7);
+  border-radius: 1px;
+}
+
+/* ---------- Context network labels (HTML, glyph-free) ---------- */
+
+.map-ctx-place,
+.map-ctx-caption {
+  pointer-events: none;
+  user-select: none;
+  font-family: Manrope, system-ui, -apple-system, "Segoe UI", sans-serif;
+  white-space: nowrap;
+  opacity: 1;
+  transition: opacity 0.18s ease;
+  z-index: 1;
+}
+
+.map-ctx-place.is-hidden,
+.map-ctx-caption.is-hidden {
+  opacity: 0;
+}
+
+.map-ctx-place {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 1.2;
+  color: rgba(199, 199, 204, 0.78);
+  text-shadow: 0 0 2px #000, 0 0 3px #000, 0 0 6px rgba(0, 0, 0, 0.9);
+}
+
+.map-ctx-place i {
+  flex: none;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: rgba(199, 199, 204, 0.7);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+}
+
+.map-ctx-r1 {
+  font-size: 11px;
+}
+
+.map-ctx-r3 {
+  font-size: 10px;
+  color: rgba(199, 199, 204, 0.68);
+}
+
+.map-ctx-caption span {
+  display: block;
+  font-size: 10px;
+  font-style: italic;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: rgba(160, 205, 228, 0.6);
+  text-shadow: 0 0 2px #000, 0 0 4px #000;
+  transform-origin: center;
+}
+
+/* ---------- Vignette ---------- */
+
+.seepwatch-map-stage::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, transparent 58%, rgba(0, 0, 0, 0.38) 100%);
 }
 
 .seepwatch-map-stage .map-legend-v2 span.map-legend-item {
@@ -237,7 +328,9 @@
 
 @media (prefers-reduced-motion: reduce) {
   .map-tag,
-  .map-town {
+  .map-town,
+  .map-ctx-place,
+  .map-ctx-caption {
     transition: none;
   }
 }

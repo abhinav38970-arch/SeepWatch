@@ -1,52 +1,11 @@
-import { useEffect, useRef, useState } from "react";
 import type { Bundle } from "./types";
 import { cfsToMgd } from "./plainUnits";
+import StorySections from "./StorySections";
+import { CountUp, Reveal } from "./useReveal";
 import "./landing.css";
 
 function openDemo() {
   window.location.hash = "demo";
-}
-
-function usePrefersReducedMotion() {
-  const [reduced, setReduced] = useState(
-    () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches
-  );
-  useEffect(() => {
-    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const onChange = () => setReduced(mq.matches);
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
-  }, []);
-  return reduced;
-}
-
-function CountUp({ to, reduced, delay = 0 }: { to: number; reduced: boolean; delay?: number }) {
-  const [value, setValue] = useState(reduced ? to : 0);
-  const raf = useRef(0);
-
-  useEffect(() => {
-    if (reduced) {
-      setValue(to);
-      return;
-    }
-    const duration = 1600;
-    let start = 0;
-    const tick = (t: number) => {
-      if (!start) start = t;
-      const p = Math.min(1, Math.max(0, (t - start - delay) / duration));
-      setValue(Math.round(to * (1 - Math.pow(1 - p, 4))));
-      if (p < 1) raf.current = requestAnimationFrame(tick);
-    };
-    raf.current = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf.current);
-  }, [to, reduced, delay]);
-
-  return (
-    <>
-      {value}
-      <span className="lp-m">M</span>
-    </>
-  );
 }
 
 function CanalFlow() {
@@ -107,7 +66,6 @@ function CanalFlow() {
 }
 
 export default function Landing({ bundle }: { bundle: Bundle }) {
-  const reduced = usePrefersReducedMotion();
   const wasted = Math.round(cfsToMgd(bundle.headline.excess_loss_7d_cfs) ?? 48);
   const short = Math.round(cfsToMgd(bundle.headline.worst_node_shortfall.p50) ?? 31);
 
@@ -122,7 +80,7 @@ export default function Landing({ bundle }: { bundle: Bundle }) {
         </button>
       </header>
 
-      <main className="lp-main">
+      <main className="lp-main lp-hero-screen">
         <h1 className="lp-hero lp-rise" style={{ ["--d" as string]: "0.1s" }}>
           Canals are leaking.
           <span className="lp-dim">Farms feel it first.</span>
@@ -130,16 +88,18 @@ export default function Landing({ bundle }: { bundle: Bundle }) {
 
         <div className="lp-stats lp-rise" style={{ ["--d" as string]: "0.35s" }}>
           <div className="lp-stat">
-            <div className="lp-num lp-num-red" aria-label={`${wasted} million`}>
-              <CountUp to={wasted} reduced={reduced} delay={300} />
+            <div className="lp-num lp-num-red">
+              <CountUp to={wasted} suffix="M" delay={300} />
             </div>
             <p className="lp-unit">gallons wasted every day</p>
+            <p className="lp-note">from one canal stretch</p>
           </div>
           <div className="lp-stat">
-            <div className="lp-num lp-num-orange" aria-label={`${short} million`}>
-              <CountUp to={short} reduced={reduced} delay={500} />
+            <div className="lp-num lp-num-orange">
+              <CountUp to={short} suffix="M" delay={500} />
             </div>
             <p className="lp-unit">gallons short for farms</p>
+            <p className="lp-note">at Chowchilla farms</p>
           </div>
         </div>
 
@@ -150,7 +110,27 @@ export default function Landing({ bundle }: { bundle: Bundle }) {
         <button type="button" className="lp-cta lp-rise" style={{ ["--d" as string]: "0.85s" }} onClick={openDemo}>
           Open the leak map
         </button>
+
+        <div className="lp-scroll lp-rise" style={{ ["--d" as string]: "1.2s" }} aria-hidden="true">
+          <span>Scroll</span>
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M6 9l6 6 6-6" />
+          </svg>
+        </div>
       </main>
+
+      <StorySections bundle={bundle} />
+
+      <section className="lp-section lp-final">
+        <Reveal as="h2" className="lp-h2 lp-final-h">
+          See it on the map.
+        </Reveal>
+        <Reveal delay={0.15}>
+          <button type="button" className="lp-cta" onClick={openDemo}>
+            Open the leak map
+          </button>
+        </Reveal>
+      </section>
 
       <p className="lp-foot">Tested on real San Joaquin River data. Demo map.</p>
     </div>

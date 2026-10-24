@@ -1,10 +1,52 @@
 import { useCallback, useEffect, useRef } from "react";
 import maplibregl from "maplibre-gl";
 import type { Bundle } from "./types";
+import { contextLines, contextPlaces } from "./mapContext";
 import "./map.css";
 
 const GALLONS_PER_CFS_DAY = 646_317;
 const SECONDARY_MIN_ZOOM = 8.4;
+const CONTEXT_BLUE = "#5ac8fa";
+const CONTEXT_RIVER = "#7fb0c4";
+const PLACE_MIN_ZOOM: Record<number, number> = { 1: 0, 2: 8.2, 3: 9 };
+const CAPTION_MIN_ZOOM = 8.4;
+const PLACE_EXCLUDE_DEG = 0.08;
+const CAPTION_MATCHERS: { re: RegExp; text: string }[] = [
+  { re: /friant[\s-]*kern/i, text: "Friant-Kern Canal" },
+  { re: /california\s+aqueduct/i, text: "California Aqueduct" },
+  { re: /delta[\s-]*mendota/i, text: "Delta-Mendota Canal" },
+];
+
+type Rect = { x0: number; y0: number; x1: number; y1: number };
+
+type ContextItem = {
+  kind: "place" | "caption";
+  el: HTMLElement;
+  inner?: HTMLElement;
+  marker: maplibregl.Marker;
+  rank: number;
+  w: number;
+  lngLat?: [number, number];
+  candidates?: [number, number][][];
+};
+
+function rectsOverlap(a: Rect, b: Rect): boolean {
+  return a.x0 < b.x1 && a.x1 > b.x0 && a.y0 < b.y1 && a.y1 > b.y0;
+}
+
+function distToPolyline(px: number, py: number, pts: { x: number; y: number }[]): number {
+  let best = Infinity;
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1];
+    const b = pts[i];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const l2 = dx * dx + dy * dy;
+    const t = l2 === 0 ? 0 : Math.max(0, Math.min(1, ((px - a.x) * dx + (py - a.y) * dy) / l2));
+    best = Math.min(best, Math.hypot(px - (a.x + t * dx), py - (a.y + t * dy)));
+  }
+  return best;
+}
 
 const RED = "#ff453a";
 const ORANGE = "#ff9f0a";
@@ -203,6 +245,8 @@ export default function MapView({
   const reachCb = useRef(onSelectReach);
   const nodeCb = useRef(onSelectNode);
   const didFitBounds = useRef(false);
+  const ctxItemsRef = useRef<ContextItem[]>([]);
+  const layoutRaf = useRef(0);
   reachCb.current = onSelectReach;
   nodeCb.current = onSelectNode;
   selectedRef.current = selected;
@@ -233,6 +277,98 @@ export default function MapView({
         .addTo(map);
     }
   }, []);
+
+  const layoutContext = useCallback(() => {
+    const map = mapRef.current;
+    const items = ctxItemsRef.current;
+    if (!map || !items.length) return;
+    const container = map.getContainer();
+    const cr = container.getBoundingClientRect();
+    const W = container.clientWidth;
+    const H = container.clientHeight;
+    const zoom = map.getZoom();
+    const pad = 5;
+
+    const taken: Rect[] = [];
+    const addEl = (el: Element | undefined) => {
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      if (r.width === 0 && r.height === 0) return;
+      taken.push({
+        x0: r.left - cr.left - pad,
+        y0: r.top - cr.top - pad,
+        x1: r.right - cr.left + pad,
+        y1: r.bottom - cr.top + pad,
+      });
+    };
+    markersRef.current.forEach((m) => addEl(m.el));
+    addEl(selTagRef.current?.getElement());
+
+    const mainLines = Object.values(reachInfoRef.current).map((info) =>
+      info.coords.map((c) => map.project([c[0], c[1]]))
+    );
+    const nearMain = (x: number, y: number) =>
+      mainLines.some((pts) => distToPolyline(x, y, pts) < 17);
+
+    const fits = (r: Rect, onMainCheck: boolean) => {
+      if (r.x1 < 0 || r.y1 < 0 || r.x0 > W || r.y0 > H) return false;
+      if (taken.some((t) => rectsOverlap(t, r))) return false;
+      if (onMainCheck) {
+        const cy = (r.y0 + r.y1) / 2;
+        if (nearMain(r.x0, cy) || nearMain((r.x0 + r.x1) / 2, cy) || nearMain(r.x1, cy)) return false;
+      }
+      return true;
+    };
+
+    for (const it of items) {
+      let shown = false;
+      if (it.kind === "place" && it.lngLat && zoom >= (PLACE_MIN_ZOOM[it.rank] ?? 9)) {
+        const p = map.project(it.lngLat);
+        const r: Rect = {
+          x0: p.x - 4,
+          y0: p.y - 8,
+          x1: p.x + 8 + it.w,
+          y1: p.y + 8,
+        };
+        if (fits(r, true)) {
+          taken.push(r);
+          shown = true;
+        }
+      } else if (it.kind === "caption" && it.candidates && zoom >= CAPTION_MIN_ZOOM) {
+        outer: for (const seg of it.candidates) {
+          const pa = map.project(seg[0]);
+          const pb = map.project(seg[1]);
+          let ang = (Math.atan2(pb.y - pa.y, pb.x - pa.x) * 180) / Math.PI;
+          if (ang > 90) ang -= 180;
+          if (ang < -90) ang += 180;
+          const rad = (ang * Math.PI) / 180;
+          const cx = (pa.x + pb.x) / 2 - Math.sin(rad) * -9;
+          const cy = (pa.y + pb.y) / 2 + Math.cos(rad) * -9;
+          const hw = (Math.abs(Math.cos(rad)) * it.w + Math.abs(Math.sin(rad)) * 12) / 2;
+          const hh = (Math.abs(Math.sin(rad)) * it.w + Math.abs(Math.cos(rad)) * 12) / 2;
+          const r: Rect = { x0: cx - hw, y0: cy - hh, x1: cx + hw, y1: cy + hh };
+          const sx = [r.x0, (r.x0 + r.x1) / 2, r.x1];
+          const sy = [r.y0, (r.y0 + r.y1) / 2, r.y1];
+          for (const x of sx) for (const y of sy) if (nearMain(x, y)) continue outer;
+          if (!fits(r, false)) continue;
+          it.marker.setLngLat([(seg[0][0] + seg[1][0]) / 2, (seg[0][1] + seg[1][1]) / 2]);
+          if (it.inner) it.inner.style.transform = `rotate(${ang}deg) translateY(-9px)`;
+          taken.push(r);
+          shown = true;
+          break;
+        }
+      }
+      it.el.classList.toggle("is-hidden", !shown);
+    }
+  }, []);
+
+  const scheduleLayout = useCallback(() => {
+    if (layoutRaf.current) return;
+    layoutRaf.current = requestAnimationFrame(() => {
+      layoutRaf.current = 0;
+      layoutContext();
+    });
+  }, [layoutContext]);
 
   useEffect(() => {
     if (!ref.current || mapRef.current) return;
@@ -265,7 +401,8 @@ export default function MapView({
         ],
       },
       center: [-120.28, 36.93],
-      zoom: 8.3,
+      zoom: 8.7,
+      minZoom: 6.5,
     });
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
     map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
@@ -276,6 +413,9 @@ export default function MapView({
     };
     map.on("zoom", updateZoomClass);
     map.on("load", updateZoomClass);
+    map.on("zoom", scheduleLayout);
+    map.on("moveend", scheduleLayout);
+    map.on("resize", scheduleLayout);
 
     const interactiveLayers = () =>
       ["reaches-hit", "reaches-line", "leak-zone-fill", "farm-zone-fill"].filter((l) =>
@@ -325,7 +465,18 @@ export default function MapView({
       const hit = pickTargetAt(e.point);
       map.getCanvas().style.cursor = hit ? "pointer" : "";
       if (!tip) return;
-      const name = hit?.kind === "reach" ? reachInfoRef.current[hit.id]?.name : undefined;
+      let name = hit?.kind === "reach" ? reachInfoRef.current[hit.id]?.name : undefined;
+      if (!hit && map.getLayer("ctx-hit")) {
+        const ctx = map.queryRenderedFeatures(
+          [
+            [e.point.x - 6, e.point.y - 6],
+            [e.point.x + 6, e.point.y + 6],
+          ],
+          { layers: ["ctx-hit"] }
+        );
+        const ctxName = ctx?.[0]?.properties?.name;
+        if (ctxName) name = String(ctxName);
+      }
       if (name) {
         tip.textContent = name;
         tip.style.left = `${e.point.x}px`;
@@ -354,14 +505,18 @@ export default function MapView({
 
     return () => {
       cancelAnimationFrame(raf);
+      cancelAnimationFrame(layoutRaf.current);
+      layoutRaf.current = 0;
       markersRef.current.forEach((m) => m.marker.remove());
       markersRef.current = [];
+      ctxItemsRef.current.forEach((c) => c.marker.remove());
+      ctxItemsRef.current = [];
       selTagRef.current?.remove();
       selTagRef.current = null;
       map.remove();
       mapRef.current = null;
     };
-  }, []);
+  }, [scheduleLayout]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -379,6 +534,82 @@ export default function MapView({
       const excessById = Object.fromEntries(
         bundle.reach_colors.map((r) => [r.id, r.excess_loss_cfs])
       );
+
+      if (!map.getSource("context-lines")) {
+        map.addSource("context-lines", {
+          type: "geojson",
+          data: {
+            type: "FeatureCollection",
+            features: contextLines
+              .filter((l) => l.coordinates.length >= 2)
+              .map((l) => ({
+                type: "Feature" as const,
+                properties: { id: l.id, name: l.name, kind: l.kind },
+                geometry: { type: "LineString" as const, coordinates: l.coordinates },
+              })),
+          },
+        });
+        const round = { "line-cap": "round", "line-join": "round" } as const;
+        const isRiver = ["==", ["get", "kind"], "river"];
+        const isBypass = ["==", ["get", "kind"], "bypass"];
+
+        map.addLayer({
+          id: "ctx-glow",
+          type: "line",
+          source: "context-lines",
+          layout: round,
+          paint: {
+            "line-color": CONTEXT_BLUE,
+            "line-width": ["interpolate", ["linear"], ["zoom"], 7, 3, 11, 5],
+            "line-blur": 3,
+            "line-opacity": 0.1,
+          },
+        });
+        map.addLayer({
+          id: "ctx-river",
+          type: "line",
+          source: "context-lines",
+          filter: isRiver as maplibregl.FilterSpecification,
+          layout: round,
+          paint: {
+            "line-color": CONTEXT_RIVER,
+            "line-width": ["interpolate", ["linear"], ["zoom"], 7, 1.1, 11, 1.8],
+            "line-opacity": 0.3,
+          },
+        });
+        map.addLayer({
+          id: "ctx-canal",
+          type: "line",
+          source: "context-lines",
+          filter: ["!", ["in", ["get", "kind"], ["literal", ["river", "bypass"]]]],
+          layout: round,
+          paint: {
+            "line-color": CONTEXT_BLUE,
+            "line-width": ["interpolate", ["linear"], ["zoom"], 7, 1.3, 11, 2],
+            "line-opacity": 0.45,
+          },
+        });
+        map.addLayer({
+          id: "ctx-bypass",
+          type: "line",
+          source: "context-lines",
+          filter: isBypass as maplibregl.FilterSpecification,
+          layout: { "line-cap": "butt", "line-join": "round" },
+          paint: {
+            "line-color": CONTEXT_BLUE,
+            "line-width": ["interpolate", ["linear"], ["zoom"], 7, 1.1, 11, 1.7],
+            "line-opacity": 0.38,
+            "line-dasharray": [3, 2.5],
+          },
+        });
+        map.addLayer({
+          id: "ctx-hit",
+          type: "line",
+          source: "context-lines",
+          layout: round,
+          paint: { "line-color": "#ffffff", "line-width": 10, "line-opacity": 0.001 },
+        });
+      }
 
       const impactZonesGeoJSON = {
         type: "FeatureCollection" as const,
@@ -573,9 +804,9 @@ export default function MapView({
           const narrow = map.getContainer().clientWidth < 600;
           map.fitBounds(bounds, {
             padding: narrow
-              ? { top: 40, bottom: 56, left: 28, right: 52 }
-              : { top: 50, bottom: 60, left: 70, right: 60 },
-            maxZoom: 10,
+              ? { top: 56, bottom: 72, left: 36, right: 56 }
+              : { top: 80, bottom: 96, left: 110, right: 100 },
+            maxZoom: 9,
             duration: 0,
           });
           didFitBounds.current = true;
@@ -738,12 +969,82 @@ export default function MapView({
         }
       }
 
+      ctxItemsRef.current.forEach((c) => c.marker.remove());
+      ctxItemsRef.current = [];
+
+      const mainNames = new Set(
+        [...Object.values(TOWNS).map((t) => t.name), ...allNodes.map((n) => n.name)].map((s) =>
+          s.trim().toLowerCase()
+        )
+      );
+      const mainPoints: [number, number][] = allNodes.map((n) => [n.lon, n.lat]);
+      const r2aMid = r2a && r2a.coordinates.length >= 2 ? midSegment(r2a.coordinates).mid : null;
+      if (r2aMid) mainPoints.push(r2aMid);
+
+      const items: ContextItem[] = [];
+
+      for (const spec of CAPTION_MATCHERS) {
+        const line = contextLines
+          .filter((l) => spec.re.test(l.name) && l.coordinates.length >= 2)
+          .sort((a, b) => b.coordinates.length - a.coordinates.length)[0];
+        if (!line) continue;
+        const n = line.coordinates.length;
+        const candidates = [0.5, 0.35, 0.65, 0.2, 0.8].map((f) => {
+          const i = Math.min(n - 2, Math.max(0, Math.floor((n - 1) * f)));
+          return [line.coordinates[i], line.coordinates[i + 1]] as [number, number][];
+        });
+        const el = document.createElement("div");
+        el.className = "map-ctx-caption is-hidden";
+        el.setAttribute("aria-hidden", "true");
+        const inner = document.createElement("span");
+        inner.textContent = spec.text;
+        el.append(inner);
+        const marker = new maplibregl.Marker({ element: el, anchor: "center" })
+          .setLngLat(candidates[0][0])
+          .addTo(map);
+        items.push({ kind: "caption", el, inner, marker, rank: 0, w: spec.text.length * 5.3 + 4, candidates });
+      }
+
+      const seen = new Set<string>();
+      const places = [...contextPlaces].sort((a, b) => a.rank - b.rank);
+      for (const p of places) {
+        const key = p.name.trim().toLowerCase();
+        if (mainNames.has(key) || seen.has(key)) continue;
+        if (
+          mainPoints.some(
+            ([lon, lat]) => Math.hypot(lon - p.lon, lat - p.lat) < PLACE_EXCLUDE_DEG
+          )
+        )
+          continue;
+        seen.add(key);
+        const el = document.createElement("div");
+        el.className = `map-ctx-place map-ctx-r${p.rank} is-hidden`;
+        el.setAttribute("aria-hidden", "true");
+        const dot = document.createElement("i");
+        const label = document.createElement("span");
+        label.textContent = p.name;
+        el.append(dot, label);
+        const marker = new maplibregl.Marker({ element: el, anchor: "left", offset: [-2, 0] })
+          .setLngLat([p.lon, p.lat])
+          .addTo(map);
+        items.push({
+          kind: "place",
+          el,
+          marker,
+          rank: p.rank,
+          w: p.name.length * 5.6,
+          lngLat: [p.lon, p.lat],
+        });
+      }
+      ctxItemsRef.current = items;
+      layoutContext();
+
       syncSelection();
     };
 
     if (map.isStyleLoaded()) apply();
     else map.once("load", apply);
-  }, [bundle, shortfallByNode, syncSelection]);
+  }, [bundle, shortfallByNode, syncSelection, layoutContext]);
 
   useEffect(() => {
     syncSelection();
@@ -755,22 +1056,29 @@ export default function MapView({
       <div ref={tooltipRef} className="map-tooltip" role="tooltip" style={{ display: "none" }} />
 
       <div className="map-legend map-legend-v2" role="group" aria-label="Canal status legend">
-        <span className="map-legend-item" style={{ ["--c" as string]: RED }}>
-          <i />
-          Leak
-        </span>
-        <span className="map-legend-item" style={{ ["--c" as string]: ORANGE }}>
-          <i />
-          Watch
-        </span>
-        <span className="map-legend-item" style={{ ["--c" as string]: YELLOW }}>
-          <i />
-          Minor
-        </span>
-        <span className="map-legend-item" style={{ ["--c" as string]: GREEN }}>
-          <i />
-          Healthy
-        </span>
+        <div className="map-legend-row">
+          <span className="map-legend-item" style={{ ["--c" as string]: RED }}>
+            <i />
+            Leak
+          </span>
+          <span className="map-legend-item" style={{ ["--c" as string]: ORANGE }}>
+            <i />
+            Watch
+          </span>
+          <span className="map-legend-item" style={{ ["--c" as string]: YELLOW }}>
+            <i />
+            Minor
+          </span>
+          <span className="map-legend-item" style={{ ["--c" as string]: GREEN }}>
+            <i />
+            Healthy
+          </span>
+          <span className="map-legend-item map-legend-other">
+            <b aria-hidden="true" />
+            Other canals
+          </span>
+        </div>
+        <div className="map-legend-note">Faint lines: nearby canals (not measured)</div>
       </div>
     </div>
   );
