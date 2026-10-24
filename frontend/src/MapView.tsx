@@ -1,15 +1,54 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import maplibregl from "maplibre-gl";
 import type { Bundle } from "./types";
+import "./map.css";
 
 const GALLONS_PER_CFS_DAY = 646_317;
+const SECONDARY_MIN_ZOOM = 8.4;
 
-/** Traffic-light color palette for immediate visual clarity */
+const RED = "#ff453a";
+const ORANGE = "#ff9f0a";
+const YELLOW = "#ffd60a";
+const GREEN = "#30d158";
+
 const REACH_TRAFFIC_COLOR: Record<string, string> = {
-  R2A: "#ef4444", // Bright Red — Major Leak!
-  R1: "#f97316", // Bright Orange — Moderate Seepage
-  R4A: "#eab308", // Warm Yellow — Minor Watch Area
-  R2B3: "#22c55e", // Bright Green — Healthy Canal (No Leak)
+  R2A: RED,
+  R1: ORANGE,
+  R4A: YELLOW,
+  R2B3: GREEN,
+};
+
+const REACH_FRIENDLY_NAME: Record<string, string> = {
+  R1: "Friant Dam → Madera",
+  R2A: "Madera → Chowchilla",
+  R2B3: "Chowchilla → Dos Palos",
+  R4A: "Dos Palos → Merced",
+};
+
+type TownSpec = {
+  name: string;
+  anchor: "left" | "right" | "top" | "bottom";
+  offset: [number, number];
+  secondary: boolean;
+  arrivalReach?: string;
+  color?: string;
+};
+
+/** Town labels sit beside the canal path, never on it. */
+const TOWNS: Record<string, TownSpec> = {
+  MIL: { name: "Friant Dam", anchor: "bottom", offset: [0, 0], secondary: false, color: "#64d2ff" },
+  GRF: { name: "Madera", anchor: "top", offset: [0, 0], secondary: true, arrivalReach: "R1" },
+  SJB: { name: "Chowchilla", anchor: "bottom", offset: [0, 0], secondary: false, color: ORANGE },
+  SDP: { name: "Dos Palos", anchor: "top", offset: [0, 0], secondary: true, arrivalReach: "R2B3" },
+  SWA: { name: "Merced", anchor: "right", offset: [0, 0], secondary: true, arrivalReach: "R4A" },
+};
+
+const TOWN_TITLES: Record<string, string> = {
+  MIL: "Friant Dam (Millerton Lake), upstream water source",
+  GRF: "Madera (Gravelly Ford checkpoint)",
+  SJB: "Chowchilla (Bifurcation checkpoint)",
+  SDP: "Dos Palos (Sack Dam checkpoint)",
+  SWA: "Merced (Washington Rd checkpoint)",
 };
 
 function reachColor(
@@ -18,12 +57,12 @@ function reachColor(
   status: string
 ): string {
   if (REACH_TRAFFIC_COLOR[id]) return REACH_TRAFFIC_COLOR[id];
-  if (status === "flagged") return "#ef4444";
-  if (status === "no_forecast" || status === "flood_no_forecast") return "#eab308";
+  if (status === "flagged") return RED;
+  if (status === "no_forecast" || status === "flood_no_forecast") return YELLOW;
   const ex = excess ?? 0;
-  if (ex > 25) return "#ef4444";
-  if (ex > 0) return "#f97316";
-  return "#22c55e";
+  if (ex > 25) return RED;
+  if (ex > 0) return ORANGE;
+  return GREEN;
 }
 
 function cfsToMillionsGallons(cfs: number | null | undefined, fallbackM: number): number {
@@ -32,142 +71,51 @@ function cfsToMillionsGallons(cfs: number | null | undefined, fallbackM: number)
   return m > 0 ? m : fallbackM;
 }
 
-function reachPlainBadge(id: string, excessCfs: number | null | undefined): {
-  text: string;
-  title: string;
-  borderColor: string;
-  bgColor: string;
-  textColor: string;
-  isMajorLeak?: boolean;
-} {
-  const lostM = cfsToMillionsGallons(excessCfs, 48);
-  switch (id) {
-    case "R2A":
-      return {
-        text: `🚨 MAJOR LEAK: Madera → Chowchilla (${lostM}M gal/day lost)`,
-        title: "Major Leak between Gravelly Ford (Madera) and Chowchilla — click for full leak analysis",
-        borderColor: "#ef4444",
-        bgColor: "#fef2f2",
-        textColor: "#991b1b",
-        isMajorLeak: true,
-      };
-    case "R1":
-      return {
-        text: "🟠 Moderate Seepage: Friant Dam → Madera",
-        title: "Moderate Seepage between Friant Dam and Gravelly Ford (Madera) — click for details",
-        borderColor: "#f97316",
-        bgColor: "#fff7ed",
-        textColor: "#9a3412",
-      };
-    case "R2B3":
-      return {
-        text: "🟢 Healthy Canal: Chowchilla → Dos Palos",
-        title: "Healthy Canal between Chowchilla and Dos Palos (no unusual leak) — click for details",
-        borderColor: "#22c55e",
-        bgColor: "#f0fdf4",
-        textColor: "#166534",
-      };
-    case "R4A":
-      return {
-        text: "🟡 Minor Watch: Dos Palos → Merced",
-        title: "Minor Watch Area between Dos Palos and Merced / Washington Rd — click for details",
-        borderColor: "#eab308",
-        bgColor: "#fefce8",
-        textColor: "#854d0e",
-      };
-    default:
-      return {
-        text: `Canal Section ${id}`,
-        title: "Click for canal leak analysis",
-        borderColor: "#64748b",
-        bgColor: "#ffffff",
-        textColor: "#0f172a",
-      };
+function midSegment(coords: number[][]): { mid: [number, number]; a: number[]; b: number[] } {
+  const n = coords.length;
+  const mid = Math.floor(n / 2);
+  if (n % 2 === 1) {
+    return {
+      mid: [coords[mid][0], coords[mid][1]],
+      a: coords[mid - 1],
+      b: coords[mid + 1],
+    };
   }
-}
-
-function nodePlainBadge(
-  id: string,
-  fallbackName: string,
-  shortfallP50: number | null | undefined
-): {
-  text: string;
-  title: string;
-  borderColor: string;
-  bgColor: string;
-  textColor: string;
-  isAlert?: boolean;
-} {
-  const shortM = cfsToMillionsGallons(shortfallP50, 31);
-  switch (id) {
-    case "MIL":
-      return {
-        text: "💧 Friant Dam (Water Source)",
-        title: "Friant Dam / Millerton Lake — Main upstream water release source",
-        borderColor: "#0284c7",
-        bgColor: "#f0f9ff",
-        textColor: "#0c4a6e",
-      };
-    case "GRF":
-      return {
-        text: "📍 Gravelly Ford (Madera)",
-        title: "Gravelly Ford checkpoint near Madera — click for water delivery details",
-        borderColor: "#f97316",
-        bgColor: "#fffaf5",
-        textColor: "#7c2d12",
-      };
-    case "SJB":
-      return {
-        text: `⚠️ Chowchilla Farms (-${shortM}M gal/day short)`,
-        title: `Chowchilla Farms delivery checkpoint — ${shortM}M gallons/day projected water shortfall from upstream leak`,
-        borderColor: "#ea580c",
-        bgColor: "#fff7ed",
-        textColor: "#9a3412",
-        isAlert: true,
-      };
-    case "SDP":
-      return {
-        text: "📍 Dos Palos Farms",
-        title: "Dos Palos Farms (Sack Dam checkpoint) — downstream farm delivery area",
-        borderColor: "#eab308",
-        bgColor: "#fefce8",
-        textColor: "#713f12",
-      };
-    case "SWA":
-      return {
-        text: "📍 Merced / Washington Rd",
-        title: "Merced / Washington Rd downstream checkpoint — click for delivery details",
-        borderColor: "#64748b",
-        bgColor: "#f8fafc",
-        textColor: "#1e293b",
-      };
-    default:
-      return {
-        text: `📍 ${fallbackName}`,
-        title: `${fallbackName} checkpoint — click for delivery impact`,
-        borderColor: "#64748b",
-        bgColor: "#f8fafc",
-        textColor: "#1e293b",
-      };
-  }
-}
-
-function midpoint(coords: number[][]): [number, number] {
-  if (!coords.length) return [-120.35, 36.9];
-  const mid = Math.floor(coords.length / 2);
-  if (coords.length % 2 === 1) {
-    return [coords[mid][0], coords[mid][1]];
-  }
-  return [
-    (coords[mid - 1][0] + coords[mid][0]) / 2,
-    (coords[mid - 1][1] + coords[mid][1]) / 2,
-  ];
+  return {
+    mid: [(coords[mid - 1][0] + coords[mid][0]) / 2, (coords[mid - 1][1] + coords[mid][1]) / 2],
+    a: coords[mid - 1],
+    b: coords[mid],
+  };
 }
 
 /**
- * Builds a smooth stadium/capsule GeoJSON Polygon around a 2-point corridor segment
- * so leak zones and farm impact areas appear as clear geographical buffers on the map.
+ * Pixel offset that pushes a label of roughly (w x h) off the canal, perpendicular
+ * to the on-screen tangent, preferring the side above the line.
  */
+function offAxisOffset(
+  map: maplibregl.Map,
+  coords: number[][],
+  w: number,
+  h: number,
+  gap = 8
+): [number, number] {
+  const { a, b } = midSegment(coords);
+  const pa = map.project([a[0], a[1]]);
+  const pb = map.project([b[0], b[1]]);
+  const tx = pb.x - pa.x;
+  const ty = pb.y - pa.y;
+  const len = Math.hypot(tx, ty) || 1;
+  let nx = -ty / len;
+  let ny = tx / len;
+  const narrow = map.getContainer().clientWidth < 600;
+  if (narrow ? ny < 0 : ny > 0) {
+    nx = -nx;
+    ny = -ny;
+  }
+  const dist = Math.abs(nx) * (w / 2) + Math.abs(ny) * (h / 2) + gap;
+  return [Math.round(nx * dist), Math.round(ny * dist)];
+}
+
 function buildCorridorZonePolygon(
   start: [number, number],
   end: [number, number],
@@ -180,47 +128,55 @@ function buildCorridorZonePolygon(
   const dx = (end[0] - start[0]) * cosLat;
   const dy = end[1] - start[1];
   const len = Math.hypot(dx, dy) || 1e-6;
-  const ux = dx / len;
-  const uy = dy / len;
-  const baseAngle = Math.atan2(uy, ux);
+  const baseAngle = Math.atan2(dy / len, dx / len);
 
   const ring: number[][] = [];
 
-  // Semicircle cap around `end` from -90 deg to +90 deg
   for (let i = 0; i <= stepsPerCap; i++) {
     const theta = baseAngle - Math.PI / 2 + (Math.PI * i) / stepsPerCap;
-    const lon = end[0] + (radiusDegLat * Math.cos(theta)) / cosLat;
-    const lat = end[1] + radiusDegLat * Math.sin(theta);
-    ring.push([lon, lat]);
+    ring.push([
+      end[0] + (radiusDegLat * Math.cos(theta)) / cosLat,
+      end[1] + radiusDegLat * Math.sin(theta),
+    ]);
   }
 
-  // Semicircle cap around `start` from +90 deg to +270 deg
   for (let i = 0; i <= stepsPerCap; i++) {
     const theta = baseAngle + Math.PI / 2 + (Math.PI * i) / stepsPerCap;
-    const lon = start[0] + (radiusDegLat * Math.cos(theta)) / cosLat;
-    const lat = start[1] + radiusDegLat * Math.sin(theta);
-    ring.push([lon, lat]);
+    ring.push([
+      start[0] + (radiusDegLat * Math.cos(theta)) / cosLat,
+      start[1] + radiusDegLat * Math.sin(theta),
+    ]);
   }
 
   ring.push(ring[0]);
   return [ring];
 }
 
-/** Carefully tuned pixel offsets so reach and checkpoint badges never collide */
-const REACH_PILL_OFFSET: Record<string, [number, number]> = {
-  R1: [24, 24],
-  R2A: [10, -28],
-  R2B3: [-8, 38],
-  R4A: [42, -10],
+const FLOW_DASH_SEQUENCE: number[][] = [
+  [0, 4, 3],
+  [0.5, 4, 2.5],
+  [1, 4, 2],
+  [1.5, 4, 1.5],
+  [2, 4, 1],
+  [2.5, 4, 0.5],
+  [3, 4, 0],
+  [0, 0.5, 3, 3.5],
+  [0, 1, 3, 3],
+  [0, 1.5, 3, 2.5],
+  [0, 2, 3, 2],
+  [0, 2.5, 3, 1.5],
+  [0, 3, 3, 1],
+  [0, 3.5, 3, 0.5],
+];
+
+type MarkerItem = {
+  id: string;
+  selectId: string;
+  el: HTMLButtonElement;
+  marker: maplibregl.Marker;
 };
 
-const NODE_PILL_OFFSET: Record<string, [number, number]> = {
-  MIL: [-24, -24],
-  GRF: [0, 26],
-  SJB: [16, -34],
-  SDP: [-44, 10],
-  SWA: [16, -24],
-};
+type ReachInfo = { name: string; color: string; coords: number[][] };
 
 type Props = {
   bundle: Bundle;
@@ -238,40 +194,88 @@ export default function MapView({
   onSelectNode,
 }: Props) {
   const ref = useRef<HTMLDivElement>(null);
+  const tooltipRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
-  const markersRef = useRef<
-    Array<{ id: string; selectId: string; el: HTMLButtonElement; marker: maplibregl.Marker }>
-  >([]);
+  const markersRef = useRef<MarkerItem[]>([]);
+  const selTagRef = useRef<maplibregl.Marker | null>(null);
+  const reachInfoRef = useRef<Record<string, ReachInfo>>({});
+  const selectedRef = useRef<string | null>(selected);
   const reachCb = useRef(onSelectReach);
   const nodeCb = useRef(onSelectNode);
   const didFitBounds = useRef(false);
   reachCb.current = onSelectReach;
   nodeCb.current = onSelectNode;
+  selectedRef.current = selected;
 
-  // Create map once
+  const syncSelection = useCallback(() => {
+    const map = mapRef.current;
+    const sel = selectedRef.current;
+    if (map && map.getLayer("reaches-selected")) {
+      map.setFilter("reaches-selected", ["==", ["get", "id"], sel ?? ""]);
+    }
+    for (const item of markersRef.current) {
+      const isSel = !!sel && (item.id === sel || item.selectId === sel);
+      item.el.classList.toggle("is-selected", isSel);
+    }
+
+    selTagRef.current?.remove();
+    selTagRef.current = null;
+    const info = sel ? reachInfoRef.current[sel] : undefined;
+    if (map && sel && info && sel !== "R2A" && info.coords.length >= 2) {
+      const el = document.createElement("div");
+      el.className = "map-tag map-tag-static";
+      el.style.setProperty("--c", info.color);
+      el.setAttribute("aria-hidden", "true");
+      el.textContent = info.name;
+      const offset = offAxisOffset(map, info.coords, info.name.length * 6.2 + 16, 20, 10);
+      selTagRef.current = new maplibregl.Marker({ element: el, offset })
+        .setLngLat(midSegment(info.coords).mid)
+        .addTo(map);
+    }
+  }, []);
+
   useEffect(() => {
     if (!ref.current || mapRef.current) return;
 
+    const reduceMotion =
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    const container = ref.current;
     const map = new maplibregl.Map({
-      container: ref.current,
+      container,
+      attributionControl: false,
       style: {
         version: 8,
-        glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
         sources: {
-          osm: {
+          carto: {
             type: "raster",
-            tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+            tiles: [
+              "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
+            ],
+            maxzoom: 16,
             tileSize: 256,
-            attribution: "© OpenStreetMap",
+            attribution: "© Esri © OpenStreetMap",
           },
         },
-        layers: [{ id: "osm", type: "raster", source: "osm" }],
+        layers: [
+          { id: "bg", type: "background", paint: { "background-color": "#000000" } },
+          { id: "carto", type: "raster", source: "carto", paint: { "raster-brightness-max": 0.55, "raster-saturation": -0.3 } },
+        ],
       },
       center: [-120.28, 36.93],
       zoom: 8.3,
     });
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
+    map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
     mapRef.current = map;
+
+    const updateZoomClass = () => {
+      container.classList.toggle("map-zoom-low", map.getZoom() < SECONDARY_MIN_ZOOM);
+    };
+    map.on("zoom", updateZoomClass);
+    map.on("load", updateZoomClass);
 
     const interactiveLayers = () =>
       ["reaches-hit", "reaches-line", "leak-zone-fill", "farm-zone-fill"].filter((l) =>
@@ -316,37 +320,66 @@ export default function MapView({
     });
 
     map.on("mousemove", (e) => {
+      const tip = tooltipRef.current;
       if (!interactiveLayers().length) return;
-      map.getCanvas().style.cursor = pickTargetAt(e.point) ? "pointer" : "";
+      const hit = pickTargetAt(e.point);
+      map.getCanvas().style.cursor = hit ? "pointer" : "";
+      if (!tip) return;
+      const name = hit?.kind === "reach" ? reachInfoRef.current[hit.id]?.name : undefined;
+      if (name) {
+        tip.textContent = name;
+        tip.style.left = `${e.point.x}px`;
+        tip.style.top = `${e.point.y}px`;
+        tip.style.display = "block";
+      } else {
+        tip.style.display = "none";
+      }
     });
 
+    map.on("mouseout", () => {
+      if (tooltipRef.current) tooltipRef.current.style.display = "none";
+    });
+
+    let raf = 0;
+    let lastStep = 0;
+    let frame = 0;
+    const tick = (t: number) => {
+      raf = requestAnimationFrame(tick);
+      if (t - lastStep < 110 || !map.getLayer("reaches-flow")) return;
+      lastStep = t;
+      frame = (frame + 1) % FLOW_DASH_SEQUENCE.length;
+      map.setPaintProperty("reaches-flow", "line-dasharray", FLOW_DASH_SEQUENCE[frame]);
+    };
+    if (!reduceMotion) raf = requestAnimationFrame(tick);
+
     return () => {
+      cancelAnimationFrame(raf);
       markersRef.current.forEach((m) => m.marker.remove());
       markersRef.current = [];
+      selTagRef.current?.remove();
+      selTagRef.current = null;
       map.remove();
       mapRef.current = null;
     };
   }, []);
 
-  // Update impact zones + canal reach lines + plain-English badges when bundle changes
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
+    const reduceMotion =
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
     const apply = () => {
-      const colorById = Object.fromEntries(
-        bundle.reach_colors.map((r) => [
-          r.id,
-          reachColor(r.id, r.excess_loss_cfs, r.status),
-        ])
+      const colorById: Record<string, string> = Object.fromEntries(
+        bundle.reach_colors.map((r) => [r.id, reachColor(r.id, r.excess_loss_cfs, r.status)])
       );
       const excessById = Object.fromEntries(
         bundle.reach_colors.map((r) => [r.id, r.excess_loss_cfs])
       );
 
-      // 1. GeoJSON Impact Zones:
-      //    - Red Major Leak Zone around Gravelly Ford -> Chowchilla (R2A)
-      //    - Orange Downstream Affected Farm Zone around Chowchilla (SJB) & Dos Palos (SDP)
       const impactZonesGeoJSON = {
         type: "FeatureCollection" as const,
         features: [
@@ -357,15 +390,11 @@ export default function MapView({
               zoneType: "leak",
               targetKind: "reach",
               targetId: "R2A",
-              title: "Major Leak Zone (Gravelly Ford → Chowchilla)",
+              title: "Major Leak Zone (Madera → Chowchilla)",
             },
             geometry: {
               type: "Polygon" as const,
-              coordinates: buildCorridorZonePolygon(
-                [-120.162, 36.785],
-                [-120.505, 36.978],
-                0.052
-              ),
+              coordinates: buildCorridorZonePolygon([-120.162, 36.785], [-120.505, 36.978], 0.052),
             },
           },
           {
@@ -379,11 +408,7 @@ export default function MapView({
             },
             geometry: {
               type: "Polygon" as const,
-              coordinates: buildCorridorZonePolygon(
-                [-120.505, 36.978],
-                [-120.65, 36.983],
-                0.058
-              ),
+              coordinates: buildCorridorZonePolygon([-120.505, 36.978], [-120.65, 36.983], 0.058),
             },
           },
         ],
@@ -395,75 +420,63 @@ export default function MapView({
       } else {
         map.addSource("impact-zones", { type: "geojson", data: impactZonesGeoJSON });
 
-        // Translucent orange fill for Downstream Affected Farm Area
         map.addLayer({
           id: "farm-zone-fill",
           type: "fill",
           source: "impact-zones",
           filter: ["==", ["get", "zoneType"], "farm"],
-          paint: {
-            "fill-color": "#f97316",
-            "fill-opacity": 0.15,
-          },
+          paint: { "fill-color": ORANGE, "fill-opacity": 0.07 },
         });
-
-        // Dashed orange outline for Downstream Affected Farm Area
         map.addLayer({
           id: "farm-zone-outline",
           type: "line",
           source: "impact-zones",
           filter: ["==", ["get", "zoneType"], "farm"],
           paint: {
-            "line-color": "#f97316",
-            "line-width": 2.5,
+            "line-color": ORANGE,
+            "line-width": 1,
             "line-dasharray": [3, 3],
-            "line-opacity": 0.85,
+            "line-opacity": 0.6,
           },
         });
-
-        // Translucent red fill for Major Leak Area (Gravelly Ford -> Chowchilla)
         map.addLayer({
           id: "leak-zone-fill",
           type: "fill",
           source: "impact-zones",
           filter: ["==", ["get", "zoneType"], "leak"],
-          paint: {
-            "fill-color": "#ef4444",
-            "fill-opacity": 0.18,
-          },
+          paint: { "fill-color": RED, "fill-opacity": 0.09 },
         });
-
-        // Dashed red outline for Major Leak Area
         map.addLayer({
           id: "leak-zone-outline",
           type: "line",
           source: "impact-zones",
           filter: ["==", ["get", "zoneType"], "leak"],
           paint: {
-            "line-color": "#ef4444",
-            "line-width": 2.5,
+            "line-color": RED,
+            "line-width": 1,
             "line-dasharray": [4, 3],
-            "line-opacity": 0.9,
+            "line-opacity": 0.65,
           },
         });
       }
 
-      // 2. Super bold, color-coded canal route lines
+      const reachInfo: Record<string, ReachInfo> = {};
       const reachFeatures = bundle.geometry.reaches
         .filter((r) => Array.isArray(r.coordinates) && r.coordinates.length >= 2)
-        .map((r) => ({
-          type: "Feature" as const,
-          properties: {
-            id: r.id,
-            name: r.name,
-            color: colorById[r.id] ?? REACH_TRAFFIC_COLOR[r.id] ?? "#64748b",
-            label: r.label,
-          },
-          geometry: {
-            type: "LineString" as const,
-            coordinates: r.coordinates,
-          },
-        }));
+        .map((r) => {
+          const color = colorById[r.id] ?? REACH_TRAFFIC_COLOR[r.id] ?? "#8e8e93";
+          reachInfo[r.id] = {
+            name: REACH_FRIENDLY_NAME[r.id] ?? r.name,
+            color,
+            coords: r.coordinates,
+          };
+          return {
+            type: "Feature" as const,
+            properties: { id: r.id, name: r.name, color, label: r.label },
+            geometry: { type: "LineString" as const, coordinates: r.coordinates },
+          };
+        });
+      reachInfoRef.current = reachInfo;
 
       const fc = { type: "FeatureCollection" as const, features: reachFeatures };
       const existingReaches = map.getSource("reaches") as maplibregl.GeoJSONSource | undefined;
@@ -471,83 +484,76 @@ export default function MapView({
         existingReaches.setData(fc);
       } else {
         map.addSource("reaches", { type: "geojson", data: fc });
+        const round = { "line-cap": "round", "line-join": "round" } as const;
 
-        // Bright red glow/halo layer behind the leaking canal section (R2A)
         map.addLayer({
-          id: "reaches-leak-glow",
+          id: "reaches-glow",
           type: "line",
           source: "reaches",
-          filter: ["==", ["get", "id"], "R2A"],
-          layout: {
-            "line-cap": "round",
-            "line-join": "round",
-          },
+          layout: round,
           paint: {
-            "line-color": "#ef4444",
-            "line-width": 26,
-            "line-opacity": 0.38,
-            "line-blur": 6,
+            "line-color": ["get", "color"],
+            "line-width": ["interpolate", ["linear"], ["zoom"], 7, 15, 10, 32],
+            "line-blur": ["interpolate", ["linear"], ["zoom"], 7, 6, 10, 12],
+            "line-opacity": ["case", ["==", ["get", "id"], "R2A"], 0.5, 0.32],
           },
         });
 
-        // Selection highlight outer ring
         map.addLayer({
           id: "reaches-selected",
           type: "line",
           source: "reaches",
-          filter: ["==", ["get", "id"], selected ?? ""],
-          layout: {
-            "line-cap": "round",
-            "line-join": "round",
-          },
+          filter: ["==", ["get", "id"], selectedRef.current ?? ""],
+          layout: round,
           paint: {
             "line-color": "#ffffff",
-            "line-width": 20,
+            "line-width": ["interpolate", ["linear"], ["zoom"], 7, 12, 10, 19],
             "line-opacity": 0.95,
           },
         });
 
-        // Thick dark outer casing layer (line-width: 14, #0f172a, opacity 0.85)
         map.addLayer({
           id: "reaches-casing",
           type: "line",
           source: "reaches",
-          layout: {
-            "line-cap": "round",
-            "line-join": "round",
-          },
+          layout: round,
           paint: {
-            "line-color": "#0f172a",
-            "line-width": 14,
-            "line-opacity": 0.85,
+            "line-color": "#05070a",
+            "line-width": ["interpolate", ["linear"], ["zoom"], 7, 9, 10, 15],
+            "line-opacity": 0.9,
           },
         });
 
-        // Bold main traffic-light canal line (line-width: 9)
         map.addLayer({
           id: "reaches-line",
           type: "line",
           source: "reaches",
-          layout: {
-            "line-cap": "round",
-            "line-join": "round",
-          },
+          layout: round,
           paint: {
             "line-color": ["get", "color"],
-            "line-width": 9,
+            "line-width": ["interpolate", ["linear"], ["zoom"], 7, 6, 10, 10],
             "line-opacity": 1,
           },
         });
 
-        // Wide transparent hit area for effortless clicking
+        map.addLayer({
+          id: "reaches-flow",
+          type: "line",
+          source: "reaches",
+          layout: { "line-cap": "butt", "line-join": "round" },
+          paint: {
+            "line-color": "#ffffff",
+            "line-width": 1.5,
+            "line-opacity": reduceMotion ? 0 : 0.7,
+            "line-dasharray": FLOW_DASH_SEQUENCE[0],
+          },
+        });
+
         map.addLayer({
           id: "reaches-hit",
           type: "line",
           source: "reaches",
-          layout: {
-            "line-cap": "round",
-            "line-join": "round",
-          },
+          layout: round,
           paint: {
             "line-color": "#ffffff",
             "line-width": 32,
@@ -559,67 +565,66 @@ export default function MapView({
       if (!didFitBounds.current) {
         const bounds = new maplibregl.LngLatBounds();
         for (const r of bundle.geometry.reaches) {
-          for (const c of r.coordinates) {
-            bounds.extend(c as [number, number]);
-          }
+          for (const c of r.coordinates) bounds.extend(c as [number, number]);
         }
-        for (const n of bundle.geometry.nodes) {
-          bounds.extend([n.lon, n.lat]);
-        }
-        bounds.extend([-119.705, 37.001]); // Ensure Friant Dam source is in bounds
+        for (const n of bundle.geometry.nodes) bounds.extend([n.lon, n.lat]);
+        bounds.extend([-119.705, 37.001]);
         if (!bounds.isEmpty()) {
+          const narrow = map.getContainer().clientWidth < 600;
           map.fitBounds(bounds, {
-            padding: { top: 82, bottom: 135, left: 115, right: 105 },
-            maxZoom: 9.2,
+            padding: narrow
+              ? { top: 40, bottom: 56, left: 28, right: 52 }
+              : { top: 50, bottom: 60, left: 70, right: 60 },
+            maxZoom: 10,
             duration: 0,
           });
           didFitBounds.current = true;
         }
       }
+      map.getContainer().classList.toggle("map-zoom-low", map.getZoom() < SECONDARY_MIN_ZOOM);
 
       markersRef.current.forEach((m) => m.marker.remove());
       markersRef.current = [];
 
-      // 3. Plain-English Canal Reach Badges at midpoints
-      for (const r of bundle.geometry.reaches) {
-        if (!r.coordinates || r.coordinates.length < 2) continue;
-        const [lon, lat] = midpoint(r.coordinates);
-        const badge = reachPlainBadge(r.id, excessById[r.id]);
+      const addMarker = (
+        item: Omit<MarkerItem, "marker">,
+        lngLat: [number, number],
+        anchor: maplibregl.PositionAnchor,
+        offset: [number, number]
+      ) => {
+        const marker = new maplibregl.Marker({ element: item.el, anchor, offset })
+          .setLngLat(lngLat)
+          .addTo(map);
+        markersRef.current.push({ ...item, marker });
+      };
+
+      // Single leak label on the red canal, offset off the line.
+      const r2a = bundle.geometry.reaches.find((r) => r.id === "R2A");
+      if (r2a && r2a.coordinates.length >= 2) {
+        const lostM = cfsToMillionsGallons(excessById["R2A"], 48);
+        const text = `${lostM}M wasted`;
         const el = document.createElement("button");
         el.type = "button";
-        el.className = `map-reach-pill ${badge.isMajorLeak ? "map-reach-pill-leak" : ""}`;
-        el.dataset.reachId = r.id;
-        el.textContent = badge.text;
-        el.title = badge.title;
-        el.setAttribute("aria-label", `${badge.text}. Click for leak analysis.`);
-        el.style.cssText = [
-          `background:${badge.bgColor}`,
-          `color:${badge.textColor}`,
-          `border:${badge.isMajorLeak ? "2.5px" : "2px"} solid ${badge.borderColor}`,
-          "border-radius:999px",
-          badge.isMajorLeak ? "padding:6px 12px" : "padding:5px 10px",
-          badge.isMajorLeak
-            ? "font:800 11.5px/1.25 Manrope,system-ui,sans-serif"
-            : "font:700 10.5px/1.25 Manrope,system-ui,sans-serif",
-          "cursor:pointer",
-          badge.isMajorLeak
-            ? "box-shadow:0 4px 16px rgba(239,68,68,0.42), 0 0 0 3px rgba(239,68,68,0.18)"
-            : "box-shadow:0 3px 10px rgba(15,23,42,0.22)",
-          `z-index:${badge.isMajorLeak ? "6" : "4"}`,
-          "white-space:nowrap",
-        ].join(";");
+        el.className = "map-tag map-tag-leak";
+        el.dataset.reachId = "R2A";
+        el.textContent = text;
+        el.title = `Madera → Chowchilla: about ${lostM}M gallons/day lost to leakage. Click for analysis.`;
+        el.setAttribute(
+          "aria-label",
+          `Major leak between Madera and Chowchilla, ${lostM} million gallons per day wasted. Open leak analysis.`
+        );
         el.addEventListener("click", (ev) => {
           ev.stopPropagation();
-          reachCb.current(r.id);
+          reachCb.current("R2A");
         });
-        const pillOffset = REACH_PILL_OFFSET[r.id] ?? [0, -16];
-        const marker = new maplibregl.Marker({ element: el, offset: pillOffset })
-          .setLngLat([lon, lat])
-          .addTo(map);
-        markersRef.current.push({ id: r.id, selectId: r.id, el, marker });
+        addMarker(
+          { id: "R2A", selectId: "R2A", el },
+          midSegment(r2a.coordinates).mid,
+          "center",
+          offAxisOffset(map, r2a.coordinates, text.length * 6.4 + 18, 22, 10)
+        );
       }
 
-      // 4. Plain-English Checkpoint & Farm Impact Markers (including Friant Dam water source)
       const hasMilNode = bundle.geometry.nodes.some((n) => n.id === "MIL");
       const r1Coords = bundle.geometry.reaches.find((r) => r.id === "R1")?.coordinates;
       const friantLon = r1Coords?.[0]?.[0] ?? -119.705;
@@ -655,349 +660,117 @@ export default function MapView({
         })),
       ];
 
+      const selectNode = (n: (typeof allNodes)[number]) => {
+        if (n.selectKind === "node") nodeCb.current(n.selectId);
+        else reachCb.current(n.selectId);
+      };
+
       for (const n of allNodes) {
-        const s = shortfallByNode.get(n.id);
-        const badge = nodePlainBadge(n.id, n.name, s?.shortfall_p50);
+        const spec: TownSpec = TOWNS[n.id] ?? {
+          name: n.name,
+          anchor: "top",
+          offset: [0, 0],
+          secondary: true,
+        };
+        const dotColor =
+          spec.color ?? (spec.arrivalReach ? colorById[spec.arrivalReach] : undefined) ?? "#e5e7eb";
         const el = document.createElement("button");
         el.type = "button";
-        el.className = `map-node ${badge.isAlert ? "map-node-alert" : ""}`;
+        const layout =
+          spec.anchor === "top"
+            ? "map-town-col"
+            : spec.anchor === "bottom"
+              ? "map-town-col-rev"
+              : spec.anchor === "right"
+                ? "map-town-row-rev"
+                : "";
+        el.className = `map-town ${layout} ${spec.secondary ? "map-secondary" : ""}`.trim();
         el.dataset.nodeId = n.id;
-        el.textContent = badge.text;
-        el.title = badge.title;
-        el.setAttribute("aria-label", `${badge.text}. Click for farm delivery analysis.`);
-        el.style.cssText = [
-          `background:${badge.bgColor}`,
-          `color:${badge.textColor}`,
-          `border:${badge.isAlert ? "2.5px" : "2px"} solid ${badge.borderColor}`,
-          "border-radius:8px",
-          badge.isAlert ? "padding:5px 11px" : "padding:4px 9px",
-          badge.isAlert
-            ? "font:800 11px/1.25 Manrope,system-ui,sans-serif"
-            : "font:700 10px/1.25 Manrope,system-ui,sans-serif",
-          "cursor:pointer",
-          badge.isAlert
-            ? "box-shadow:0 4px 14px rgba(234,88,12,0.35), 0 0 0 3px rgba(249,115,22,0.16)"
-            : "box-shadow:0 2px 8px rgba(15,23,42,0.2)",
-          `z-index:${badge.isAlert ? "5" : "3"}`,
-          "white-space:nowrap",
-        ].join(";");
+        el.style.setProperty("--c", dotColor);
+        el.title = TOWN_TITLES[n.id] ?? `${spec.name} checkpoint`;
+        el.setAttribute("aria-label", `${spec.name}. Open delivery details.`);
+        const dot = document.createElement("span");
+        dot.className = "map-town-dot";
+        dot.setAttribute("aria-hidden", "true");
+        const label = document.createElement("span");
+        label.className = "map-town-name";
+        label.textContent = spec.name;
+        el.append(dot, label);
         el.addEventListener("click", (ev) => {
           ev.stopPropagation();
-          if (n.selectKind === "node") {
-            nodeCb.current(n.selectId);
-          } else {
-            reachCb.current(n.selectId);
-          }
+          selectNode(n);
         });
-        const nodeOffset = NODE_PILL_OFFSET[n.id] ?? [0, 20];
-        const marker = new maplibregl.Marker({ element: el, offset: nodeOffset })
-          .setLngLat([n.lon, n.lat])
-          .addTo(map);
-        markersRef.current.push({ id: n.id, selectId: n.selectId, el, marker });
+
+        // Centre the dot (not the text box) on the node position.
+        const dotShift: [number, number] =
+          spec.anchor === "left"
+            ? [-7, 0]
+            : spec.anchor === "right"
+              ? [7, 0]
+              : spec.anchor === "top"
+                ? [0, -6]
+                : [0, 6];
+        addMarker({ id: n.id, selectId: n.selectId, el }, [n.lon, n.lat], spec.anchor, [
+          dotShift[0] + spec.offset[0],
+          dotShift[1] + spec.offset[1],
+        ]);
+
+        if (n.id === "SJB") {
+          const shortM = cfsToMillionsGallons(
+            shortfallByNode.get(n.id)?.shortfall_p50,
+            31
+          );
+          const tag = document.createElement("button");
+          tag.type = "button";
+          tag.className = "map-tag map-tag-farm map-farm-tag";
+          tag.dataset.nodeId = "SJB-farms";
+          tag.textContent = `${shortM}M short`;
+          tag.title = `Chowchilla farms: about ${shortM}M gallons/day projected shortfall from the upstream leak.`;
+          tag.setAttribute(
+            "aria-label",
+            `Chowchilla farms, ${shortM} million gallons per day short. Open delivery details.`
+          );
+          tag.addEventListener("click", (ev) => {
+            ev.stopPropagation();
+            selectNode(n);
+          });
+          addMarker({ id: n.id, selectId: n.selectId, el: tag }, [n.lon, n.lat], "top", [-26, 14]);
+        }
       }
+
+      syncSelection();
     };
 
     if (map.isStyleLoaded()) apply();
     else map.once("load", apply);
-  }, [bundle, shortfallByNode]);
+  }, [bundle, shortfallByNode, syncSelection]);
 
-  // Update selection highlight on map when `selected` changes
   useEffect(() => {
-    const map = mapRef.current;
-    if (map && map.getLayer("reaches-selected")) {
-      map.setFilter("reaches-selected", ["==", ["get", "id"], selected ?? ""]);
-    }
-    for (const item of markersRef.current) {
-      const isSel = item.id === selected || item.selectId === selected;
-      item.el.style.outline = isSel ? "3px solid #0f172a" : "none";
-      item.el.style.outlineOffset = isSel ? "2px" : "0px";
-    }
-  }, [selected]);
-
-  const r2aExcessCfs =
-    bundle.reach_colors.find((r) => r.id === "R2A")?.excess_loss_cfs ??
-    bundle.headline.excess_loss_7d_cfs;
-  const leakGallonsM = cfsToMillionsGallons(r2aExcessCfs, 48);
-  const sjbShortfallCfs =
-    shortfallByNode.get("SJB")?.shortfall_p50 ?? bundle.headline.worst_node_shortfall.p50;
-  const sjbShortfallM = cfsToMillionsGallons(sjbShortfallCfs, 31);
+    syncSelection();
+  }, [selected, syncSelection]);
 
   return (
     <div className="seepwatch-map-stage" style={{ position: "absolute", inset: 0 }}>
-      <style>{`
-        /* Keep WebGL canal traffic-light colors vivid and full-saturation */
-        #map .maplibregl-canvas {
-          filter: saturate(1.05) contrast(1.02) !important;
-        }
-        /* Hide any legacy duplicate legend/hint rendered outside MapView */
-        .map-wrap > .map-legend:not(.map-legend-v2),
-        .map-wrap > .map-hint:not(.map-hint-v2) {
-          display: none !important;
-        }
-        .map-reach-pill,
-        .map-node {
-          min-height: 32px !important;
-          min-width: auto !important;
-          transition: transform 0.14s ease, box-shadow 0.14s ease;
-        }
-        .map-reach-pill:hover,
-        .map-node:hover {
-          transform: scale(1.04);
-          z-index: 10 !important;
-        }
-        @keyframes leakPulseRing {
-          0%, 100% {
-            box-shadow: 0 4px 16px rgba(239, 68, 68, 0.45), 0 0 0 3px rgba(239, 68, 68, 0.22);
-          }
-          50% {
-            box-shadow: 0 4px 20px rgba(239, 68, 68, 0.65), 0 0 0 6px rgba(239, 68, 68, 0.32);
-          }
-        }
-        .map-reach-pill-leak {
-          animation: leakPulseRing 2.2s infinite ease-in-out;
-        }
-      `}</style>
-
-      {/* Main MapLibre Canvas Container */}
       <div id="map" ref={ref} style={{ position: "absolute", inset: 0 }} />
+      <div ref={tooltipRef} className="map-tooltip" role="tooltip" style={{ display: "none" }} />
 
-      {/* Top Quick-Select Bar Overlay */}
-      <div
-        className="map-hint map-hint-v2"
-        role="toolbar"
-        aria-label="Quick-select canal sections and farm checkpoints"
-        style={{
-          position: "absolute",
-          top: 10,
-          left: 10,
-          right: 54,
-          zIndex: 5,
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          flexWrap: "wrap",
-          padding: "7px 10px",
-          background: "rgba(15, 23, 42, 0.9)",
-          backdropFilter: "blur(8px)",
-          borderRadius: 10,
-          border: "1px solid rgba(255, 255, 255, 0.15)",
-          boxShadow: "0 6px 20px rgba(15, 23, 42, 0.28)",
-          color: "#f8fafc",
-          fontSize: 11,
-        }}
-      >
-        <span
-          style={{
-            fontWeight: 800,
-            fontSize: 10,
-            textTransform: "uppercase",
-            letterSpacing: "0.06em",
-            color: "#cbd5e1",
-            marginRight: 4,
-          }}
-        >
-          Jump to:
+      <div className="map-legend map-legend-v2" role="group" aria-label="Canal status legend">
+        <span className="map-legend-item" style={{ ["--c" as string]: RED }}>
+          <i />
+          Leak
         </span>
-        <button
-          type="button"
-          onClick={() => onSelectReach("R2A")}
-          style={{
-            padding: "4px 9px",
-            borderRadius: 999,
-            border: selected === "R2A" ? "2px solid #ffffff" : "1.5px solid #ef4444",
-            background: selected === "R2A" ? "#ef4444" : "rgba(239, 68, 68, 0.22)",
-            color: "#ffffff",
-            fontWeight: 700,
-            fontSize: 11,
-            cursor: "pointer",
-          }}
-        >
-          🚨 Major Leak: Madera → Chowchilla ({leakGallonsM}M gal/day)
-        </button>
-        <button
-          type="button"
-          onClick={() => onSelectNode("SJB")}
-          style={{
-            padding: "4px 9px",
-            borderRadius: 999,
-            border: selected === "SJB" ? "2px solid #ffffff" : "1.5px solid #f97316",
-            background: selected === "SJB" ? "#ea580c" : "rgba(249, 115, 22, 0.22)",
-            color: "#ffffff",
-            fontWeight: 700,
-            fontSize: 11,
-            cursor: "pointer",
-          }}
-        >
-          ⚠️ Chowchilla Farms (-{sjbShortfallM}M gal/day)
-        </button>
-        <button
-          type="button"
-          onClick={() => onSelectReach("R1")}
-          style={{
-            padding: "4px 9px",
-            borderRadius: 999,
-            border: selected === "R1" ? "2px solid #ffffff" : "1px solid rgba(249, 115, 22, 0.7)",
-            background: selected === "R1" ? "#f97316" : "rgba(255, 255, 255, 0.1)",
-            color: "#f8fafc",
-            fontWeight: 600,
-            fontSize: 10.5,
-            cursor: "pointer",
-          }}
-        >
-          🟠 Friant Dam → Madera
-        </button>
-        <button
-          type="button"
-          onClick={() => onSelectReach("R2B3")}
-          style={{
-            padding: "4px 9px",
-            borderRadius: 999,
-            border: selected === "R2B3" ? "2px solid #ffffff" : "1px solid rgba(34, 197, 94, 0.7)",
-            background: selected === "R2B3" ? "#16a34a" : "rgba(255, 255, 255, 0.1)",
-            color: "#f8fafc",
-            fontWeight: 600,
-            fontSize: 10.5,
-            cursor: "pointer",
-          }}
-        >
-          🟢 Chowchilla → Dos Palos
-        </button>
-        <button
-          type="button"
-          onClick={() => onSelectReach("R4A")}
-          style={{
-            padding: "4px 9px",
-            borderRadius: 999,
-            border: selected === "R4A" ? "2px solid #ffffff" : "1px solid rgba(234, 179, 8, 0.7)",
-            background: selected === "R4A" ? "#ca8a04" : "rgba(255, 255, 255, 0.1)",
-            color: "#f8fafc",
-            fontWeight: 600,
-            fontSize: 10.5,
-            cursor: "pointer",
-          }}
-        >
-          🟡 Dos Palos → Merced
-        </button>
-      </div>
-
-      {/* Bottom-Left Ultra-Clear Visual Map Legend */}
-      <div
-        className="map-legend map-legend-v2"
-        aria-label="Canal Leak and Farm Impact Map Key"
-        style={{
-          position: "absolute",
-          left: 12,
-          bottom: 12,
-          zIndex: 5,
-          maxWidth: 345,
-          padding: "11px 13px",
-          background: "rgba(255, 254, 249, 0.96)",
-          backdropFilter: "blur(8px)",
-          border: "1.5px solid rgba(15, 23, 42, 0.18)",
-          borderRadius: 10,
-          boxShadow: "0 6px 22px rgba(15, 23, 42, 0.18)",
-          color: "#0f172a",
-          fontSize: 11,
-          lineHeight: 1.35,
-        }}
-      >
-        <div
-          style={{
-            fontWeight: 800,
-            fontSize: 10,
-            textTransform: "uppercase",
-            letterSpacing: "0.07em",
-            color: "#334155",
-            marginBottom: 7,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-          }}
-        >
-          <span>Map Guide · Canal Status &amp; Leak Zones</span>
-        </div>
-
-        <div style={{ display: "grid", gap: 5 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span
-              style={{
-                width: 24,
-                height: 8,
-                borderRadius: 999,
-                background: "#ef4444",
-                border: "1.5px solid #0f172a",
-                boxShadow: "0 0 0 3px rgba(239, 68, 68, 0.25)",
-                flexShrink: 0,
-              }}
-            />
-            <span>
-              🔴 <strong>Red Canal + Red Zone</strong> = Major Leak ({leakGallonsM}M gal/day wasted)
-            </span>
-          </div>
-
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span
-              style={{
-                width: 24,
-                height: 8,
-                borderRadius: 999,
-                background: "#f97316",
-                border: "1.5px solid #0f172a",
-                flexShrink: 0,
-              }}
-            />
-            <span>
-              🟠 <strong>Orange Canal + Zone</strong> = Moderate Seepage / Farm Impact
-            </span>
-          </div>
-
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span
-              style={{
-                width: 24,
-                height: 8,
-                borderRadius: 999,
-                background: "#eab308",
-                border: "1.5px solid #0f172a",
-                flexShrink: 0,
-              }}
-            />
-            <span>
-              🟡 <strong>Yellow Canal</strong> = Minor Watch Area
-            </span>
-          </div>
-
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span
-              style={{
-                width: 24,
-                height: 8,
-                borderRadius: 999,
-                background: "#22c55e",
-                border: "1.5px solid #0f172a",
-                flexShrink: 0,
-              }}
-            />
-            <span>
-              🟢 <strong>Green Canal</strong> = Healthy Flow (No Leak)
-            </span>
-          </div>
-
-          <div
-            style={{
-              height: 1,
-              background: "rgba(15, 23, 42, 0.12)",
-              margin: "3px 0",
-            }}
-          />
-
-          <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#334155" }}>
-            <span style={{ fontSize: 12, flexShrink: 0 }}>⚠️</span>
-            <span>
-              <strong>Location Badges</strong> = Click any canal or town to see leak analysis
-            </span>
-          </div>
-        </div>
+        <span className="map-legend-item" style={{ ["--c" as string]: ORANGE }}>
+          <i />
+          Watch
+        </span>
+        <span className="map-legend-item" style={{ ["--c" as string]: YELLOW }}>
+          <i />
+          Minor
+        </span>
+        <span className="map-legend-item" style={{ ["--c" as string]: GREEN }}>
+          <i />
+          Healthy
+        </span>
       </div>
     </div>
   );

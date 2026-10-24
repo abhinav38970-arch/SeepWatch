@@ -11,7 +11,7 @@ import {
 } from "recharts";
 import type { TimelinePoint } from "./types";
 
-export type TimelineRow = TimelinePoint;
+type TimelineRow = TimelinePoint;
 
 type Props = {
   data?: TimelineRow[];
@@ -19,169 +19,129 @@ type Props = {
 };
 
 const MGD_PER_CFS = 0.646317;
+const DAYS_SHOWN = 120;
+
+const RED = "#ff453a";
+const GRAY_TEXT = "#8e8e93";
 
 function toPositiveLossMgd(cfs: number | null | undefined): number {
   if (cfs == null || Number.isNaN(cfs)) return 0;
   return Number((Math.max(0, -cfs) * MGD_PER_CFS).toFixed(1));
 }
 
+type TipPayload = { payload?: { actual_mgd?: number; normal_mgd?: number } };
+
+function DarkTooltip({
+  active,
+  label,
+  payload,
+}: {
+  active?: boolean;
+  label?: string | number;
+  payload?: TipPayload[];
+}) {
+  if (!active || !payload?.length) return null;
+  const row = payload[0]?.payload;
+  if (!row) return null;
+  return (
+    <div className="sw-tip">
+      <div className="sw-tip-date">{String(label)}</div>
+      <div className="sw-tip-row">
+        <i style={{ background: RED }} />
+        Lost <b>{Math.round(row.actual_mgd ?? 0)}M</b>
+      </div>
+      <div className="sw-tip-row">
+        <i style={{ background: "#8e8e93" }} />
+        Normal <b>{Math.round(row.normal_mgd ?? 0)}M</b>
+      </div>
+    </div>
+  );
+}
+
 export default function TimelineChart({ data, rows }: Props) {
   const source = data ?? rows ?? [];
   const chartData = source
     .filter((d) => d.loss_cfs != null && d.q10 != null && d.q90 != null)
+    .slice(-DAYS_SHOWN)
     .map((d) => {
       const boundA = toPositiveLossMgd(d.q10);
       const boundB = toPositiveLossMgd(d.q90);
-      const lowMgd = Math.min(boundA, boundB);
-      const highMgd = Math.max(boundA, boundB);
-      const normalMgd = toPositiveLossMgd(d.q50);
-      const actualMgd = toPositiveLossMgd(d.loss_cfs);
       return {
         ...d,
-        actual_mgd: actualMgd,
-        normal_mgd: normalMgd,
-        band_mgd: [lowMgd, highMgd] as [number, number],
+        actual_mgd: toPositiveLossMgd(d.loss_cfs),
+        normal_mgd: toPositiveLossMgd(d.q50),
+        band_mgd: [Math.min(boundA, boundB), Math.max(boundA, boundB)] as [number, number],
       };
     });
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", width: "100%", height: "100%" }}>
-      <div
-        style={{
-          display: "flex",
-          flexWrap: "wrap",
-          alignItems: "center",
-          gap: "6px 12px",
-          fontSize: "10px",
-          color: "#10231f",
-          marginBottom: "2px",
-          lineHeight: 1.3,
-        }}
-      >
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontWeight: 600 }}>
-          <span
-            style={{
-              display: "inline-block",
-              width: 14,
-              height: 3,
-              borderRadius: 2,
-              background: "#e04f26",
-            }}
-          />
-          Actual Water Lost (Million gal/day)
+    <div className="sw-chart">
+      <div className="sw-chart-legend">
+        <span>
+          <i className="sw-key-line" /> Water lost
         </span>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 5, color: "#0d6e69", fontWeight: 600 }}>
-          <span
-            style={{
-              display: "inline-block",
-              width: 14,
-              height: 8,
-              borderRadius: 2,
-              background: "rgba(13, 110, 105, 0.2)",
-              borderTop: "1.5px dashed #0d6e69",
-            }}
-          />
-          Normal Expected Seepage
+        <span>
+          <i className="sw-key-band" /> Normal
         </span>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "#c93b1b", fontWeight: 600 }}>
-          <span
-            style={{
-              display: "inline-block",
-              width: 7,
-              height: 7,
-              borderRadius: "50%",
-              background: "#e04f26",
-            }}
-          />
-          Big Leak Alert Days
+        <span>
+          <i className="sw-key-dot" /> Alert
         </span>
       </div>
+      <p className="sw-chart-caption">Red above gray means a leak.</p>
 
-      <p
-        style={{
-          margin: "0 0 6px 0",
-          fontSize: "10.5px",
-          color: "#52645e",
-          fontStyle: "italic",
-          lineHeight: 1.35,
-        }}
-      >
-        When the red line jumps above the normal shaded zone, the canal is leaking extra water.
-      </p>
-
-      <div style={{ flex: 1, minHeight: 110 }}>
+      <div className="sw-chart-plot">
         <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={chartData} margin={{ top: 6, right: 8, left: 2, bottom: 0 }}>
-            <CartesianGrid stroke="#d8dacf" strokeDasharray="3 3" />
+          <ComposedChart data={chartData} margin={{ top: 6, right: 6, left: 0, bottom: 0 }}>
+            <CartesianGrid stroke="rgba(255,255,255,0.05)" vertical={false} />
             <XAxis
               dataKey="date"
-              tick={{ fill: "#64746f", fontSize: 9 }}
+              tick={{ fill: GRAY_TEXT, fontSize: 9 }}
               tickFormatter={(v) => String(v).slice(5)}
-              minTickGap={28}
+              minTickGap={36}
+              axisLine={false}
+              tickLine={false}
             />
             <YAxis
-              tick={{ fill: "#64746f", fontSize: 9 }}
+              tick={{ fill: GRAY_TEXT, fontSize: 9 }}
               tickFormatter={(v) => `${v}M`}
-              width={42}
+              width={36}
               domain={["auto", "auto"]}
+              axisLine={false}
+              tickLine={false}
             />
             <Tooltip
-              contentStyle={{
-                background: "#fffef9",
-                border: "1px solid #d8dacf",
-                borderRadius: 4,
-                fontSize: 10.5,
-              }}
-              labelStyle={{ color: "#10231f", fontWeight: 700 }}
-              formatter={(value: unknown, name: string) => {
-                if (Array.isArray(value) && value.length === 2) {
-                  return [
-                    `${Number(value[0]).toFixed(1)} to ${Number(value[1]).toFixed(1)} M gal/day`,
-                    "Normal Expected Seepage (Range)",
-                  ];
-                }
-                if (typeof value === "number") {
-                  return [`${value.toFixed(1)} M gal/day`, name];
-                }
-                return [String(value), name];
-              }}
+              content={<DarkTooltip />}
+              cursor={{ stroke: "rgba(255,255,255,0.18)", strokeWidth: 1 }}
             />
             <Area
               type="monotone"
               dataKey="band_mgd"
               stroke="none"
-              fill="#0d6e69"
-              fillOpacity={0.18}
-              name="Normal Expected Seepage (Range)"
-            />
-            <Line
-              type="monotone"
-              dataKey="normal_mgd"
-              stroke="#0d6e69"
-              strokeDasharray="4 3"
-              dot={false}
-              strokeWidth={1.6}
-              name="Normal Expected Seepage"
+              fill="#8e8e93"
+              fillOpacity={0.22}
+              isAnimationActive={false}
             />
             <Line
               type="monotone"
               dataKey="actual_mgd"
-              stroke="#e04f26"
+              className="sw-line-glow"
+              stroke={RED}
               dot={false}
-              strokeWidth={2.1}
-              name="Actual Water Lost (Million gal/day)"
+              activeDot={{ r: 4, fill: RED, stroke: "#000", strokeWidth: 1 }}
+              strokeWidth={2.2}
+              isAnimationActive={false}
             />
             {chartData
-              .filter((d) => d.anomaly && d.actual_mgd != null)
+              .filter((d) => d.anomaly)
               .map((d) => (
                 <ReferenceDot
                   key={d.date}
                   x={d.date}
                   y={d.actual_mgd}
-                  r={4}
-                  fill="#d92d20"
-                  stroke="#fffef9"
-                  strokeWidth={1}
+                  r={2.5}
+                  fill={RED}
+                  stroke="none"
+                  className="sw-dot-glow"
                 />
               ))}
           </ComposedChart>
