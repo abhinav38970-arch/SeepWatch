@@ -19,8 +19,8 @@ function fmtRange(lo: number | null | undefined, hi: number | null | undefined, 
 
 function fmtBalance(n: number | null | undefined, d = 1): string {
   if (n == null || Number.isNaN(n)) return "—";
-  if (n > 0) return `+${n.toFixed(d)} cfs (gain)`;
-  return `${n.toFixed(d)} cfs`;
+  if (n > 0) return `+${n.toFixed(d)} cubic ft/sec (gain)`;
+  return `${n.toFixed(d)} cubic ft/sec`;
 }
 
 export default function DetailDrawer({ bundle, selected, onClose }: Props) {
@@ -42,7 +42,7 @@ export default function DetailDrawer({ bundle, selected, onClose }: Props) {
           <div>
             <h3>Evidence &amp; Pre-Registered Evaluation</h3>
             <div className="watch-meta">
-              Pitch {bundle.pitch_scenario} · {bundle.pitch_key} · held-out 80% coverage{" "}
+              Technical evidence · Pitch {bundle.pitch_scenario} · {bundle.pitch_key} · held-out 80% coverage{" "}
               {fmt((cov?.coverage_corrected ?? 0) * 100, 1)}% (2024 calib{" "}
               {fmt((cov?.calib_2024_raw ?? 0) * 100, 1)}%)
             </div>
@@ -54,7 +54,7 @@ export default function DetailDrawer({ bundle, selected, onClose }: Props) {
           Locked in <code>docs/EVALUATION_RULES.md</code> before scoring held-out 2025–2026.
           Train {bundle.evidence.train_rows.toLocaleString()} / test{" "}
           {bundle.evidence.test_rows.toLocaleString()} reach-horizon rows. Model mean MAE{" "}
-          {fmt(dep?.model_mae, 1)} cfs vs {dep?.best_baseline} {fmt(dep?.best_baseline_mae, 1)} cfs.
+          {fmt(dep?.model_mae, 1)} cubic ft/sec vs {dep?.best_baseline} {fmt(dep?.best_baseline_mae, 1)} cubic ft/sec.
         </p>
 
         <h2 style={{ marginTop: 14, fontSize: "0.75rem", color: "var(--muted)" }}>
@@ -200,7 +200,7 @@ export default function DetailDrawer({ bundle, selected, onClose }: Props) {
         <div>
           <h3>{reach?.name ?? node?.name ?? selected}</h3>
           <div className="watch-meta">
-            {reach ? `provenance: ${reach.label.replaceAll("_", " ")}` : node ? `node shortfall · ${node.provenance ?? "measured"}` : ""}
+            {reach ? `Data basis: ${reach.label.replaceAll("_", " ")}` : node ? `Modeled downstream effect · ${node.provenance ?? "measured"}` : ""}
           </div>
         </div>
         <button type="button" onClick={onClose}>Close</button>
@@ -213,7 +213,7 @@ export default function DetailDrawer({ bundle, selected, onClose }: Props) {
           {reach.reason && (
             <>
               <span>No-forecast reason</span>
-              <span>{reach.reason.replaceAll("_", " ")} (~9 cfs vs ±5% gauge noise)</span>
+              <span>{reach.reason.replaceAll("_", " ")} (~9 cubic ft/sec vs ±5% gauge noise)</span>
             </>
           )}
           <span>Forecast balance (1–7d mean)</span>
@@ -224,7 +224,7 @@ export default function DetailDrawer({ bundle, selected, onClose }: Props) {
           <span>
             {reach.excess_loss_cfs == null && watch?.excess_loss_cfs == null
               ? "— (noise floor)"
-              : `${fmt(Math.max(0, reach.excess_loss_cfs ?? watch?.excess_loss_cfs ?? 0))} cfs`}
+              : `${fmt(Math.max(0, reach.excess_loss_cfs ?? watch?.excess_loss_cfs ?? 0))} cubic ft/sec`}
           </span>
           {watch && (
             <>
@@ -237,7 +237,7 @@ export default function DetailDrawer({ bundle, selected, onClose }: Props) {
           {reachFar && (
             <>
               <span>Baseline flag rate (2016–2024)</span>
-              <span>{fmt(reachFar.mean_flags_per_month, 2)} flags / 30d</span>
+              <span>{fmt(reachFar.mean_flags_per_month, 2)} flags per 30 days</span>
             </>
           )}
         </div>
@@ -256,7 +256,7 @@ export default function DetailDrawer({ bundle, selected, onClose }: Props) {
 
       {fc && (
         <>
-          <h2 style={{ fontSize: "0.75rem", color: "var(--muted)" }}>FORECAST BY HORIZON (CFS)</h2>
+          <h2 style={{ fontSize: "0.75rem", color: "var(--muted)" }}>FORECAST BY DAY (CUBIC FEET PER SECOND)</h2>
           <table className="evidence-table">
             <thead>
               <tr>
@@ -285,17 +285,17 @@ export default function DetailDrawer({ bundle, selected, onClose }: Props) {
       {node && (
         <div className="kv">
           <span>Friant release scenario</span>
-          <span>{fmt(node.release_cfs ?? 395, 0)} cfs</span>
+          <span>{fmt(node.release_cfs ?? 395, 0)} cubic ft/sec</span>
           <span>Expected arrival (normal loss)</span>
-          <span>{fmt(node.expected_arrival_cfs, 0)} cfs</span>
+          <span>{fmt(node.expected_arrival_cfs, 0)} cubic ft/sec</span>
           <span>Forecast arrival (median)</span>
-          <span>{fmt(node.arrival_p50, 0)} cfs</span>
+          <span>{fmt(node.arrival_p50, 0)} cubic ft/sec</span>
           <span>Forecast arrival (80%)</span>
-          <span>{fmtRange(node.arrival_p10, node.arrival_p90, 0)} cfs</span>
+          <span>{fmtRange(node.arrival_p10, node.arrival_p90, 0)} cubic ft/sec</span>
           <span>Shortfall vs expected (median)</span>
-          <span>{fmt(node.shortfall_p50, 0)} cfs</span>
+          <span>{fmt(node.shortfall_p50, 0)} cubic ft/sec</span>
           <span>Shortfall (80% interval)</span>
-          <span>{fmtRange(node.shortfall_p10, node.shortfall_p90, 0)} cfs</span>
+          <span>{fmtRange(node.shortfall_p10, node.shortfall_p90, 0)} cubic ft/sec</span>
           <span>Upstream reaches</span>
           <span>{node.upstream_reaches.join(" → ")}</span>
         </div>

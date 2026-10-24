@@ -4,216 +4,319 @@ import MapView from "./MapView";
 import TimelineChart from "./TimelineChart";
 import DetailDrawer from "./DetailDrawer";
 
-const PITCH_BLURB: Record<string, string> = {
-  A: "Beats best baseline across days 1–7 on held-out 2025–2026",
-  B: "Wins at days 5–7 (+8.9% ✓) & beats SJRRP curve (+50.4% ✓)",
-  C: "Beats SJRRP curve; persistence wins short-term",
-  D: "ML does not beat persistence — transparent balance + shortfall engine",
-};
+const GALLONS_PER_CFS_DAY = 646_317;
+const ACRE_FEET_PER_CFS_DAY = 1.9835;
 
 function fmt(n: number | null | undefined, digits = 0): string {
   if (n == null || Number.isNaN(n)) return "—";
-  return n.toFixed(digits);
+  return n.toLocaleString(undefined, { maximumFractionDigits: digits, minimumFractionDigits: digits });
 }
 
-/** Interval like "15 to 82" so a negative lo never looks like "-12-8". */
-function fmtRange(lo: number | null | undefined, hi: number | null | undefined, digits = 0): string {
-  if (lo == null || hi == null || Number.isNaN(lo) || Number.isNaN(hi)) return "—";
-  return `${lo.toFixed(digits)} to ${hi.toFixed(digits)}`;
+function gallonsPerDay(cfs: number | null | undefined): string {
+  if (cfs == null) return "—";
+  return `${fmt(Math.abs(cfs) * GALLONS_PER_CFS_DAY / 1_000_000, 0)} million gal/day`;
 }
 
-function skillClass(s: number): string {
-  if (s > 0.005) return "positive";
-  if (s < -0.02) return "negative";
-  return "neutral";
+function openDemo() {
+  window.location.hash = "demo";
+}
+
+function closeDemo() {
+  history.pushState("", document.title, window.location.pathname + window.location.search);
+  window.dispatchEvent(new HashChangeEvent("hashchange"));
+}
+
+function Landing({ bundle }: { bundle: Bundle }) {
+  const excess = bundle.headline.excess_loss_7d_cfs;
+  const shortfall = bundle.headline.worst_node_shortfall;
+  const acreFeetWeek = excess * ACRE_FEET_PER_CFS_DAY * 7;
+
+  return (
+    <main className="landing">
+      <nav className="landing-nav" aria-label="Primary navigation">
+        <a className="wordmark" href="#" aria-label="SeepWatch home">
+          <span className="brand-mark" aria-hidden="true">S</span>
+          <span>SeepWatch</span>
+        </a>
+        <span className="prototype-tag">Hackathon prototype</span>
+      </nav>
+
+      <section className="hero">
+        <div className="hero-copy">
+          <div className="eyebrow"><span /> Water intelligence for the Central Valley</div>
+          <h1>Find water loss<br />before it reaches<br /><em>the field.</em></h1>
+          <p className="hero-lede">
+            SeepWatch compares flow between gauges, learns what “normal” looks like,
+            and flags unusual losses early—so water teams know where to look first.
+          </p>
+          <button type="button" className="primary-cta" onClick={openDemo}>
+            View live demo <span aria-hidden="true">→</span>
+          </button>
+          <p className="cta-note">Interactive SJRRP corridor demonstration · no sign-in</p>
+        </div>
+
+        <div className="hero-visual" aria-label="Illustration of monitored water moving through a canal">
+          <div className="sun-orbit" />
+          <div className="valley-lines" />
+          <div className="canal">
+            <div className="canal-flow" />
+            <span className="sensor sensor-a"><i /> Gauge A</span>
+            <span className="sensor sensor-b"><i /> Gauge B</span>
+            <span className="leak-pulse"><i /> Unusual loss detected</span>
+          </div>
+          <div className="visual-card">
+            <span>Demonstration signal</span>
+            <strong>{fmt(excess)} cubic ft/sec</strong>
+            <small>above normal loss · about {gallonsPerDay(excess)}</small>
+          </div>
+        </div>
+      </section>
+
+      <section className="impact" aria-labelledby="impact-title">
+        <div className="section-intro">
+          <span className="section-number">01</span>
+          <div>
+            <p className="kicker">Why this matters</p>
+            <h2 id="impact-title">Every missing drop has a destination.</h2>
+          </div>
+          <p>
+            A loss between two gauges can mean less water downstream, delayed
+            deliveries, and crews searching miles of channel. SeepWatch turns
+            existing flow readings into a prioritized field check.
+          </p>
+        </div>
+
+        <div className="impact-grid">
+          <article className="impact-card alert-card">
+            <span className="impact-icon">!</span>
+            <p>Current demo flag</p>
+            <strong>{fmt(excess)}</strong>
+            <h3>cubic feet per second above normal</h3>
+            <small>Equivalent to roughly {gallonsPerDay(excess)}.</small>
+          </article>
+          <article className="impact-card">
+            <span className="impact-icon">≈</span>
+            <p>One week at that rate</p>
+            <strong>{fmt(acreFeetWeek)}</strong>
+            <h3>acre-feet of water</h3>
+            <small>About {fmt(acreFeetWeek * 325_851 / 1_000_000, 0)} million gallons.</small>
+          </article>
+          <article className="impact-card">
+            <span className="impact-icon">↓</span>
+            <p>Downstream effect</p>
+            <strong>{fmt(shortfall.p50)}</strong>
+            <h3>cubic feet per second below expected</h3>
+            <small>Median modeled shortfall at {shortfall.name}.</small>
+          </article>
+        </div>
+      </section>
+
+      <section className="how-it-works" aria-labelledby="how-title">
+        <div>
+          <p className="kicker">Simple by design</p>
+          <h2 id="how-title">From flow readings to a field-ready signal.</h2>
+        </div>
+        <ol>
+          <li><span>1</span><div><strong>Measure</strong><p>Compare upstream and downstream gauges after accounting for travel time.</p></div></li>
+          <li><span>2</span><div><strong>Learn</strong><p>Forecast each reach’s expected range using historical operating conditions.</p></div></li>
+          <li><span>3</span><div><strong>Prioritize</strong><p>Highlight unusual loss and show which downstream locations may be affected.</p></div></li>
+        </ol>
+      </section>
+
+      <section className="honesty">
+        <span className="honesty-icon">✓</span>
+        <div>
+          <p className="kicker">Built for honest decisions</p>
+          <h2>Measured here. Designed to travel.</h2>
+          <p>
+            Current validation uses public paired-gauge data from the San Joaquin River
+            Restoration Program (SJRRP) corridor. We have not validated the model on all
+            Central Valley irrigation canals. The demo map is schematic, forecasts and
+            downstream effects are modeled, and broader canal use is illustrative until
+            a district connects and validates its own gauge data.
+          </p>
+          <button type="button" className="text-link" onClick={openDemo}>Explore the labeled demo →</button>
+        </div>
+      </section>
+
+      <footer>
+        <span>SeepWatch</span>
+        <span>Prototype · Not an operational decision system</span>
+      </footer>
+    </main>
+  );
+}
+
+function Demo({ bundle }: { bundle: Bundle }) {
+  const [selected, setSelected] = useState<string | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const shortfallByNode = useMemo(() => {
+    const values = new Map<string, Bundle["nodes_shortfall"][0]>();
+    bundle.nodes_shortfall.forEach((node) => values.set(node.node_id, node));
+    return values;
+  }, [bundle]);
+  const excess = bundle.headline.excess_loss_7d_cfs;
+  const worst = bundle.headline.worst_node_shortfall;
+  const closeDrawer = () => {
+    setDrawerOpen(false);
+    setSelected(null);
+  };
+  const select = (id: string) => {
+    setSelected(id);
+    setDrawerOpen(true);
+  };
+
+  return (
+    <main className="demo">
+      <header className="demo-header">
+        <button type="button" className="back-button" onClick={closeDemo} aria-label="Back to overview">←</button>
+        <div className="demo-brand">
+          <span className="brand-mark">S</span>
+          <div><strong>SeepWatch</strong><small>Live corridor demo</small></div>
+        </div>
+        <div className="demo-status"><i /> Data through {bundle.meta.asof}</div>
+        <button type="button" className="about-button" onClick={closeDemo}>About the problem</button>
+      </header>
+
+      <section className="demo-context">
+        <div>
+          <span className="demo-label">Demonstration · SJRRP corridor</span>
+          <h1>Where should the water team look first?</h1>
+          <p>Click a route or downstream location for a plain-language analysis.</p>
+        </div>
+        <div className="demo-metrics">
+          <article className="signal">
+            <span>Unusual loss signal</span>
+            <strong>{fmt(excess)} <small>cubic ft/sec</small></strong>
+            <p>≈ {gallonsPerDay(excess)} above expected</p>
+          </article>
+          <article>
+            <span>Most affected location</span>
+            <strong>{worst.name}</strong>
+            <p>≈ {fmt(worst.p50)} cubic ft/sec below expected</p>
+          </article>
+          <article>
+            <span>Forecast window</span>
+            <strong>Next 7 days</strong>
+            <p>Modeled range, updated from gauge data</p>
+          </article>
+        </div>
+      </section>
+
+      <div className="demo-workspace">
+        <section className="map-panel">
+          <div className="map-title">
+            <div><span className="kicker">Interactive route view</span><strong>San Joaquin River conveyance corridor</strong></div>
+            <span className="schematic-chip">Schematic geometry</span>
+          </div>
+          <div className="map-wrap">
+            <MapView
+              bundle={bundle}
+              shortfallByNode={shortfallByNode}
+              selected={selected}
+              onSelectReach={select}
+              onSelectNode={select}
+            />
+            <div className="map-hint">Select a colored route or labeled node</div>
+            <div className="map-legend">
+              <strong>Route condition</strong>
+              <div className="legend-row"><span className="swatch high" /> Unusual loss detected</div>
+              <div className="legend-row"><span className="swatch elevated" /> Elevated loss</div>
+              <div className="legend-row"><span className="swatch normal" /> Within expected range</div>
+              <div className="legend-row"><span className="swatch unavailable" /> No reliable forecast</div>
+              <div className="legend-divider" />
+              <div className="legend-row"><span className="dot affected" /> Downstream shortfall</div>
+            </div>
+          </div>
+          <div className="map-disclaimer">
+            <span>Measured</span> reach balances use SJRRP gauges · <span>Modeled</span> forecasts and downstream effects · map lines are schematic
+          </div>
+        </section>
+
+        <aside className="analysis-panel">
+          <div className="analysis-heading">
+            <div><span className="kicker">Priority checks</span><h2>Leak detection watchlist</h2></div>
+            <span>{bundle.watchlist.length} routes</span>
+          </div>
+          <div className="watch-list">
+            {bundle.watchlist.map((item, index) => {
+              const reach = bundle.reach_colors.find((r) => r.id === item.reach_id);
+              const flagged = item.anomaly || item.excess_loss_cfs > 8;
+              return (
+                <button
+                  type="button"
+                  key={item.reach_id}
+                  className={`watch-card ${flagged ? "flagged" : ""}`}
+                  onClick={() => select(item.reach_id)}
+                >
+                  <span className="watch-index">{String(index + 1).padStart(2, "0")}</span>
+                  <span className="watch-copy">
+                    <strong>{reach?.name.replace(/\s*\(.*/, "") ?? item.reach_id}</strong>
+                    <small>{item.label === "measured" ? "Measured gauge balance" : "Context / unexplained balance"}</small>
+                  </span>
+                  <span className="watch-reading">
+                    <strong>{flagged ? `${fmt(Math.max(0, item.excess_loss_cfs))} above normal` : "Within range"}</strong>
+                    <small>{flagged ? gallonsPerDay(item.excess_loss_cfs) : "No unusual loss signal"}</small>
+                  </span>
+                  <span className="watch-arrow">›</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="trend-block">
+            <div className="trend-title">
+              <div><span className="kicker">Selected signal</span><h2>Reach 2A trend</h2></div>
+              <div className="trend-key"><i /> observed <i /> expected range</div>
+            </div>
+            <div className="chart-wrap"><TimelineChart data={bundle.timeline} /></div>
+            <p>Red points mark repeated unusual readings. Shading shows the model’s 80% expected range.</p>
+          </div>
+
+          <button type="button" className="evidence-row" onClick={() => select("evidence")}>
+            <span><strong>How reliable is this?</strong><small>See held-out testing, assumptions, and limitations</small></span>
+            <span>View evidence →</span>
+          </button>
+        </aside>
+      </div>
+
+      <div className="demo-honesty">
+        <strong>What is real in this demo?</strong>
+        <span>SJRRP gauge measurements and held-out evaluation are real. Forecasts are modeled; corridor geometry is schematic. This is not yet validated district-canal data.</span>
+      </div>
+
+      {drawerOpen && (
+        <>
+          <button type="button" className="drawer-backdrop" aria-label="Close analysis" onClick={closeDrawer} />
+          <DetailDrawer bundle={bundle} selected={selected} onClose={closeDrawer} />
+        </>
+      )}
+    </main>
+  );
 }
 
 export default function App() {
   const [bundle, setBundle] = useState<Bundle | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [selected, setSelected] = useState<string | null>(null);
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [demoOpen, setDemoOpen] = useState(window.location.hash === "#demo");
 
   useEffect(() => {
     fetch("/api/bundle")
-      .then(async (r) => {
-        if (!r.ok) throw new Error(`API ${r.status}`);
-        return r.json();
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`API ${response.status}`);
+        return response.json();
       })
-      .then((b: Bundle) => setBundle(b))
-      .catch((e) => setError(String(e)));
+      .then((data: Bundle) => setBundle(data))
+      .catch((reason) => setError(String(reason)));
   }, []);
 
-  const shortfallByNode = useMemo(() => {
-    const m = new Map<string, Bundle["nodes_shortfall"][0]>();
-    bundle?.nodes_shortfall.forEach((n) => m.set(n.node_id, n));
-    return m;
-  }, [bundle]);
+  useEffect(() => {
+    const syncRoute = () => setDemoOpen(window.location.hash === "#demo");
+    window.addEventListener("hashchange", syncRoute);
+    return () => window.removeEventListener("hashchange", syncRoute);
+  }, []);
 
-  if (error) {
-    return (
-      <div className="error">
-        Could not load SeepWatch bundle. Run <code>seepwatch-pipeline</code> then{" "}
-        <code>seepwatch-api</code>.
-        <div style={{ marginTop: 8 }}>{error}</div>
-      </div>
-    );
-  }
-  if (!bundle) return <div className="loading">Loading SeepWatch…</div>;
-
-  const h = bundle.headline;
-  const worst = h.worst_node_shortfall;
-  const skillVal = h.skill_vs_best_baseline * 100;
-  const skillPct = `${skillVal >= 0 ? "+" : ""}${skillVal.toFixed(1)}`;
-  const closeDrawer = () => {
-    setDrawerOpen(false);
-    setSelected(null);
-  };
-
-  return (
-    <div className="app">
-      <header className="topbar">
-        <div className="brand">
-          <h1>SeepWatch</h1>
-          <div className="sub">
-            Canal-loss forecast · SJRRP corridor · as of {bundle.meta.asof} · deployable mode
-          </div>
-        </div>
-        <div className="badges">
-          <span className="badge pitch">Pitch {bundle.pitch_scenario}</span>
-          <span className="badge measured">labels measured</span>
-          <span className="badge modeled">forecast modeled</span>
-          <span className="badge schematic">map schematic</span>
-        </div>
-      </header>
-
-      <section className="headline">
-        <div className={`metric ${h.excess_loss_7d_cfs > 20 ? "negative" : "neutral"}`}>
-          <div className="label">Forecast excess loss (7d)</div>
-          <div className="value">{fmt(h.excess_loss_7d_cfs, 0)} cfs</div>
-          <div className="hint">Above learned normal loss across flagged reaches</div>
-        </div>
-        <div className={`metric ${(worst.p50 ?? 0) > 10 ? "negative" : "neutral"}`}>
-          <div className="label">Worst-node shortfall (80%)</div>
-          <div className="value">{fmtRange(worst.p10, worst.p90, 0)} cfs</div>
-          <div className="hint">
-            {worst.name ?? "—"} · median {fmt(worst.p50, 0)} cfs below normal arrival
-          </div>
-        </div>
-        <div className={`metric ${skillClass(h.skill_vs_best_baseline)}`}>
-          <div className="label">Skill vs {h.best_baseline} (1–7d)</div>
-          <div className="value">{skillPct}%</div>
-          <div className="hint">{PITCH_BLURB[bundle.pitch_scenario] ?? bundle.pitch_key}</div>
-        </div>
-      </section>
-
-      <div className="main">
-        <div className="map-wrap">
-          <MapView
-            bundle={bundle}
-            shortfallByNode={shortfallByNode}
-            selected={selected}
-            onSelectReach={(id) => {
-              setSelected(id);
-              setDrawerOpen(true);
-            }}
-            onSelectNode={(id) => {
-              setSelected(id);
-              setDrawerOpen(true);
-            }}
-          />
-          <div className="map-legend">
-            <div className="legend-row"><span className="swatch" style={{ background: "#f07178" }} /> High excess loss</div>
-            <div className="legend-row"><span className="swatch" style={{ background: "#f0b429" }} /> Elevated</div>
-            <div className="legend-row"><span className="swatch" style={{ background: "#3dd6c6" }} /> Near normal</div>
-            <div className="legend-row"><span className="swatch" style={{ background: "#475569" }} /> No forecast / flood</div>
-            <div className="legend-row"><span className="dot" style={{ background: "#c084fc" }} /> Node shortfall</div>
-          </div>
-        </div>
-
-        <aside className="side">
-          <div className="panel">
-            <h2>Watchlist · top reaches</h2>
-            {bundle.watchlist.map((w, i) => {
-              const isGain = w.forecast_loss_cfs > 0;
-              const ex = w.excess_loss_cfs;
-              return (
-                <div
-                  key={w.reach_id}
-                  className={`watch-item ${w.anomaly ? "flagged" : ""} ${selected === w.reach_id ? "active" : ""}`}
-                  onClick={() => {
-                    setSelected(w.reach_id);
-                    setDrawerOpen(true);
-                  }}
-                >
-                  <div className="watch-rank">{i + 1}</div>
-                  <div>
-                    <div className="watch-title">{w.reach_id}</div>
-                    <div className="watch-meta">
-                      {w.label.replaceAll("_", " ")}
-                      {w.anomaly ? " · flagged" : ""}
-                    </div>
-                  </div>
-                  <div className="watch-val">
-                    <div className="big">
-                      {isGain ? `+${fmt(w.forecast_loss_cfs, 0)} gain` : `${fmt(w.forecast_loss_cfs, 0)} cfs`}
-                    </div>
-                    <div className="small">
-                      {ex > 0 ? `+${fmt(ex, 1)} cfs excess` : `normal (${fmt(w.normal_loss_cfs, 0)} cfs)`}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          <div className="panel">
-            <h2>Reach 2A · loss &amp; anomaly band</h2>
-            <div className="chart-wrap">
-              <TimelineChart data={bundle.timeline} />
-            </div>
-            <div className="chart-note">
-              Shaded band = 3-day-ahead q10–q90. Red marks = persisted anomaly flags. Flood days excluded.
-            </div>
-          </div>
-
-          <div className="panel" style={{ overflow: "auto" }}>
-            <h2>Templated alerts</h2>
-            {bundle.alerts.length === 0 && <div className="watch-meta">No alerts for this as-of date.</div>}
-            {bundle.alerts.map((a, i) => (
-              <div className="alert" key={i}>{a}</div>
-            ))}
-            <button
-              type="button"
-              className="evidence-btn"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                setSelected("evidence");
-                setDrawerOpen(true);
-              }}
-            >
-              Open evidence &amp; skill table
-            </button>
-          </div>
-        </aside>
-      </div>
-
-      {drawerOpen && (
-        <>
-          <button
-            type="button"
-            className="drawer-backdrop"
-            aria-label="Close drawer"
-            onClick={closeDrawer}
-          />
-          <DetailDrawer
-            bundle={bundle}
-            selected={selected}
-            onClose={closeDrawer}
-          />
-        </>
-      )}
-    </div>
-  );
+  if (error) return <div className="error"><strong>SeepWatch could not load its data.</strong><span>{error}</span></div>;
+  if (!bundle) return <div className="loading"><span className="loading-mark">S</span><span>Loading water intelligence…</span></div>;
+  return demoOpen ? <Demo bundle={bundle} /> : <Landing bundle={bundle} />;
 }

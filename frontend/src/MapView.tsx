@@ -175,7 +175,7 @@ export default function MapView({
           source: "reaches",
           filter: ["==", ["get", "id"], selected ?? ""],
           paint: {
-            "line-color": "#e8eefc",
+            "line-color": "#fffef9",
             "line-width": 11,
             "line-opacity": 0.9,
           },
@@ -235,14 +235,14 @@ export default function MapView({
         el.textContent = r.id;
         el.title = `${r.name} (click for details)`;
         el.style.cssText = [
-          "background:rgba(11,18,32,0.92)",
-          `color:${c}`,
-          `border:1.5px solid ${c}`,
-          "border-radius:6px",
-          "padding:2px 6px",
-          "font:600 11px/1.2 IBM Plex Sans, system-ui, sans-serif",
+          "background:rgba(255,254,249,0.96)",
+          "color:#10231f",
+          `border:2px solid ${c}`,
+          "border-radius:3px",
+          "padding:4px 7px",
+          "font:700 10px/1.2 Manrope,system-ui,sans-serif",
           "cursor:pointer",
-          "box-shadow:0 1px 4px rgba(0,0,0,0.45)",
+          "box-shadow:0 2px 8px rgba(16,35,31,0.24)",
           "z-index:2",
           "position:relative",
         ].join(";");
@@ -265,17 +265,17 @@ export default function MapView({
         el.type = "button";
         el.className = "map-node";
         el.dataset.nodeId = n.id;
-        el.textContent = n.id;
-        el.title = `${n.name} (click for shortfall)`;
+        el.textContent = n.name;
+        el.title = `${n.name}: click for modeled downstream effect`;
         el.style.cssText = [
-          `background:${color}`,
-          "color:#0b1220",
-          "border:2px solid #0b1220",
-          "border-radius:999px",
-          "padding:2px 7px",
-          "font:700 11px/1.2 IBM Plex Sans, system-ui, sans-serif",
+          "background:rgba(255,254,249,0.96)",
+          "color:#10231f",
+          `border:2px solid ${color}`,
+          "border-radius:3px",
+          "padding:4px 7px",
+          "font:700 9px/1.2 Manrope,system-ui,sans-serif",
           "cursor:pointer",
-          "box-shadow:0 1px 4px rgba(0,0,0,0.35)",
+          "box-shadow:0 2px 8px rgba(16,35,31,0.2)",
         ].join(";");
         el.addEventListener("click", (ev) => {
           ev.stopPropagation();
@@ -300,7 +300,7 @@ export default function MapView({
     }
     for (const item of markersRef.current) {
       const isSel = item.id === selected;
-      item.el.style.outline = isSel ? "2px solid #e8eefc" : "none";
+      item.el.style.outline = isSel ? "3px solid #f16d3a" : "none";
       item.el.style.outlineOffset = isSel ? "2px" : "0px";
     }
   }, [selected]);
