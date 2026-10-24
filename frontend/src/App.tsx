@@ -5,9 +5,9 @@ import TimelineChart from "./TimelineChart";
 import DetailDrawer from "./DetailDrawer";
 
 const PITCH_BLURB: Record<string, string> = {
-  A: "Model beats best baseline on held-out years",
-  B: "Mixed: wins at ramp / longer horizons",
-  C: "Beats SJRRP curve; persistence still wins short-term",
+  A: "Beats best baseline across days 1–7 on held-out 2025–2026",
+  B: "Wins at days 5–7 (+8.9% ✓) & beats SJRRP curve (+50.4% ✓)",
+  C: "Beats SJRRP curve; persistence wins short-term",
   D: "ML does not beat persistence — transparent balance + shortfall engine",
 };
 
@@ -16,16 +16,14 @@ function fmt(n: number | null | undefined, digits = 0): string {
   return n.toFixed(digits);
 }
 
-/** Interval like "-12 to 8" so a negative lo never looks like "-12-8". */
+/** Interval like "15 to 82" so a negative lo never looks like "-12-8". */
 function fmtRange(lo: number | null | undefined, hi: number | null | undefined, digits = 0): string {
   if (lo == null || hi == null || Number.isNaN(lo) || Number.isNaN(hi)) return "—";
-  const a = lo.toFixed(digits);
-  const b = hi.toFixed(digits);
-  return `${a} to ${b}`;
+  return `${lo.toFixed(digits)} to ${hi.toFixed(digits)}`;
 }
 
 function skillClass(s: number): string {
-  if (s > 0.02) return "positive";
+  if (s > 0.005) return "positive";
   if (s < -0.02) return "negative";
   return "neutral";
 }
@@ -65,7 +63,12 @@ export default function App() {
 
   const h = bundle.headline;
   const worst = h.worst_node_shortfall;
-  const skillPct = (h.skill_vs_best_baseline * 100).toFixed(1);
+  const skillVal = h.skill_vs_best_baseline * 100;
+  const skillPct = `${skillVal >= 0 ? "+" : ""}${skillVal.toFixed(1)}`;
+  const closeDrawer = () => {
+    setDrawerOpen(false);
+    setSelected(null);
+  };
 
   return (
     <div className="app">
@@ -85,20 +88,20 @@ export default function App() {
       </header>
 
       <section className="headline">
-        <div className="metric neutral">
+        <div className={`metric ${h.excess_loss_7d_cfs > 20 ? "negative" : "neutral"}`}>
           <div className="label">Forecast excess loss (7d)</div>
           <div className="value">{fmt(h.excess_loss_7d_cfs, 0)} cfs</div>
-          <div className="hint">Above recent loss across flagged reaches</div>
+          <div className="hint">Above learned normal loss across flagged reaches</div>
         </div>
-        <div className={`metric ${ (worst.p50 ?? 0) > 5 ? "negative" : "neutral"}`}>
+        <div className={`metric ${(worst.p50 ?? 0) > 10 ? "negative" : "neutral"}`}>
           <div className="label">Worst-node shortfall (80%)</div>
           <div className="value">{fmtRange(worst.p10, worst.p90, 0)} cfs</div>
           <div className="hint">
-            {worst.name ?? "—"} · median {fmt(worst.p50, 0)} vs expected arrival
+            {worst.name ?? "—"} · median {fmt(worst.p50, 0)} cfs below normal arrival
           </div>
         </div>
         <div className={`metric ${skillClass(h.skill_vs_best_baseline)}`}>
-          <div className="label">Skill vs {h.best_baseline}</div>
+          <div className="label">Skill vs {h.best_baseline} (1–7d)</div>
           <div className="value">{skillPct}%</div>
           <div className="hint">{PITCH_BLURB[bundle.pitch_scenario] ?? bundle.pitch_key}</div>
         </div>
@@ -131,29 +134,37 @@ export default function App() {
         <aside className="side">
           <div className="panel">
             <h2>Watchlist · top reaches</h2>
-            {bundle.watchlist.map((w, i) => (
-              <div
-                key={w.reach_id}
-                className={`watch-item ${w.anomaly ? "flagged" : ""} ${selected === w.reach_id ? "active" : ""}`}
-                onClick={() => {
-                  setSelected(w.reach_id);
-                  setDrawerOpen(true);
-                }}
-              >
-                <div className="watch-rank">{i + 1}</div>
-                <div>
-                  <div className="watch-title">{w.reach_id}</div>
-                  <div className="watch-meta">
-                    {w.label.replaceAll("_", " ")}
-                    {w.anomaly ? " · flagged" : ""}
+            {bundle.watchlist.map((w, i) => {
+              const isGain = w.forecast_loss_cfs > 0;
+              const ex = w.excess_loss_cfs;
+              return (
+                <div
+                  key={w.reach_id}
+                  className={`watch-item ${w.anomaly ? "flagged" : ""} ${selected === w.reach_id ? "active" : ""}`}
+                  onClick={() => {
+                    setSelected(w.reach_id);
+                    setDrawerOpen(true);
+                  }}
+                >
+                  <div className="watch-rank">{i + 1}</div>
+                  <div>
+                    <div className="watch-title">{w.reach_id}</div>
+                    <div className="watch-meta">
+                      {w.label.replaceAll("_", " ")}
+                      {w.anomaly ? " · flagged" : ""}
+                    </div>
+                  </div>
+                  <div className="watch-val">
+                    <div className="big">
+                      {isGain ? `+${fmt(w.forecast_loss_cfs, 0)} gain` : `${fmt(w.forecast_loss_cfs, 0)} cfs`}
+                    </div>
+                    <div className="small">
+                      {ex > 0 ? `+${fmt(ex, 1)} cfs excess` : `normal (${fmt(w.normal_loss_cfs, 0)} cfs)`}
+                    </div>
                   </div>
                 </div>
-                <div className="watch-val">
-                  <div className="big">{fmt(w.forecast_loss_cfs, 0)} cfs</div>
-                  <div className="small">excess {fmt(w.excess_loss_cfs, 1)}</div>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           <div className="panel">
@@ -162,7 +173,7 @@ export default function App() {
               <TimelineChart data={bundle.timeline} />
             </div>
             <div className="chart-note">
-              Shaded band = model q10–q90. Red marks = anomaly flags. Flood days excluded from training.
+              Shaded band = 3-day-ahead q10–q90. Red marks = persisted anomaly flags. Flood days excluded.
             </div>
           </div>
 
@@ -194,12 +205,12 @@ export default function App() {
             type="button"
             className="drawer-backdrop"
             aria-label="Close drawer"
-            onClick={() => setDrawerOpen(false)}
+            onClick={closeDrawer}
           />
           <DetailDrawer
             bundle={bundle}
             selected={selected}
-            onClose={() => setDrawerOpen(false)}
+            onClose={closeDrawer}
           />
         </>
       )}

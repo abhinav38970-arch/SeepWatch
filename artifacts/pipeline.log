@@ -1,14 +1,14 @@
-2026-10-24 18:34:34,112 INFO Fetching gauges…
-2026-10-24 18:34:34,112 INFO cache hit MIL_85_D_2009-01-01_2026-10-24.csv
-2026-10-24 18:34:34,132 INFO cache hit MIL_76_D_2009-01-01_2026-10-24.csv
-2026-10-24 18:34:34,145 INFO cache hit GRF_20_H_2009-01-01_2026-10-24.csv
-2026-10-24 18:34:34,395 INFO cache hit SJB_20_H_2009-01-01_2026-10-24.csv
-2026-10-24 18:34:34,558 INFO cache hit CBP_20_H_2009-01-01_2026-10-24.csv
-2026-10-24 18:34:34,828 INFO cache hit SDP_20_D_2009-01-01_2026-10-24.csv
-2026-10-24 18:34:34,840 INFO cache hit SWA_20_D_2009-01-01_2026-10-24.csv
-2026-10-24 18:34:34,851 INFO cache hit MEN_20_H_2009-01-01_2026-10-24.csv
-2026-10-24 18:34:35,134 INFO Daily panel /workspace/data/processed/daily_panel.parquet → 6506 rows
-2026-10-24 18:34:35,297 INFO Train rows=48087  Test rows=9620
-2026-10-24 18:34:36,545 INFO Coverage {'coverage_raw': 0.8267001815388912, 'coverage_corrected': 0.8267001815388912, 'scale': 1.0}
-2026-10-24 18:34:37,581 INFO Pitch scenario: {'pitch_scenario': 'D', 'pitch_key': 'beats_neither', 'best_baseline': 'persistence', 'skill_vs_best_baseline': -0.0523623385612173, 'ramp_n_days': 44, 'long_horizon_beats': 0, 'overall_beats': {'persistence': False, 'sjrrp': True, 'flow_aware': True}}
-2026-10-24 18:34:39,406 INFO Wrote /workspace/artifacts/bundle.json (pitch=D gate=True)
+2026-10-24 19:44:01,198 INFO Fetching gauges…
+2026-10-24 19:44:01,200 INFO cache hit MIL_85_D_2009-01-01_2026-10-24.csv
+2026-10-24 19:44:01,229 INFO cache hit MIL_76_D_2009-01-01_2026-10-24.csv
+2026-10-24 19:44:01,291 INFO cache hit GRF_20_H_2009-01-01_2026-10-24.csv
+2026-10-24 19:44:01,598 INFO cache hit SJB_20_H_2009-01-01_2026-10-24.csv
+2026-10-24 19:44:01,818 INFO cache hit CBP_20_H_2009-01-01_2026-10-24.csv
+2026-10-24 19:44:02,070 INFO cache hit SDP_20_D_2009-01-01_2026-10-24.csv
+2026-10-24 19:44:02,084 INFO cache hit SWA_20_D_2009-01-01_2026-10-24.csv
+2026-10-24 19:44:02,118 INFO cache hit MEN_20_H_2009-01-01_2026-10-24.csv
+2026-10-24 19:44:02,454 INFO Daily panel /workspace/data/processed/daily_panel.parquet → 6506 rows
+2026-10-24 19:44:02,674 INFO Train rows=46254  Test rows=9801  asof=2026-10-19
+2026-10-24 19:44:04,600 INFO Coverage (held-out test): {'coverage_raw': 0.7470666258545047, 'coverage_corrected': 0.7470666258545047, 'calib_2024_raw': 0.8100764609503004, 'calib_2024_corrected': 0.8100764609503004, 'scale': 1.0}
+2026-10-24 19:44:04,914 INFO Pitch scenario: {'pitch_scenario': 'B', 'pitch_key': 'mixed_by_regime', 'best_baseline': 'persistence', 'skill_vs_best_baseline': 0.00861372227191104, 'skill_vs_sjrrp': 0.5038680527020883, 'skill_vs_flow_aware': 0.49056028506535726, 'ramp_n_days': 47, 'long_horizon_beats': 3, 'overall_beats': {'persistence': False, 'sjrrp': True, 'flow_aware': True}}
+2026-10-24 19:44:06,044 INFO Wrote /workspace/artifacts/bundle.json (pitch=B gate=True)

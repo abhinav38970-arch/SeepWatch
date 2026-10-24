@@ -19,6 +19,17 @@ Designed for districts to plug in their own SCADA pairs. **Not yet run on distri
 
 ---
 
+## Active Result — Scenario B (`mixed_by_regime`)
+
+- **As-of date:** `2026-10-19` (train `2016–2024`: `46,254` rows; held-out test `2025–2026`: `9,801` rows).
+- **Short horizons (days 1–2):** Persistence is hard to beat when flow is steady.
+- **Longer horizons (days 5–7):** LightGBM beats persistence at **all three** multi-day horizons (`+7.7%` at day 5, `+8.9%` at day 6, `+8.9%` at day 7, 95% block-bootstrap CI $> 0$), with `+0.9%` mean skill overall vs persistence and `+3.4%` mean skill on ramp days.
+- **Vs programmatic baselines:** Beats the SJRRP monthly loss curve (`+50.4%` mean skill, `7/7` horizons) and per-reach flow-aware regression (`+49.1%` mean skill, `7/7` horizons).
+- **Interval coverage:** `81.0%` on 2024 out-of-sample calibration; `74.7%` on held-out 2025–2026 test set.
+- **Current alert (`2026-10-19`):** Reach 2A is forecast to lose `170.7 cfs` (`73.8 cfs` above normal `96.9 cfs`), driving a forecast arrival shortfall of `48 cfs` (`80%` interval `15 to 82 cfs`) at Chowchilla Bifurcation (`SJB`).
+
+---
+
 ## Scenario A — `beats_best_baseline`
 
 **Lead:** Forecast beats the best baseline by `{skill_pct}%` mean skill across days 1–7 on held-out water years 2025–2026 (deployable mode: future flow held constant).
@@ -44,7 +55,7 @@ Designed for districts to plug in their own SCADA pairs. **Not yet run on distri
 - Steady-regime skill (may be near zero or negative) vs ramp/long-horizon skill.
 - Same interval and shortfall artifacts as A.
 
-**Honest limits (always):** same as A. Do **not** claim overall win.
+**Honest limits (always):** same as A. Do **not** claim overall 7/7 win.
 
 ---
 

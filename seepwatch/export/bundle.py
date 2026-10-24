@@ -14,13 +14,14 @@ def _json_safe(obj: Any) -> Any:
         return {k: _json_safe(v) for k, v in obj.items()}
     if isinstance(obj, list):
         return [_json_safe(v) for v in obj]
+    # Check bool BEFORE int because bool is a subclass of int in Python!
+    if isinstance(obj, (np.bool_, bool)):
+        return bool(obj)
     if isinstance(obj, (np.floating, float)):
         x = float(obj)
         return None if not np.isfinite(x) else x
     if isinstance(obj, (np.integer, int)):
         return int(obj)
-    if isinstance(obj, (np.bool_, bool)):
-        return bool(obj)
     if isinstance(obj, pd.Timestamp):
         return obj.strftime("%Y-%m-%d")
     if obj is None:
@@ -36,13 +37,14 @@ def write_bundle(path: Path, bundle: dict) -> None:
 def build_geometry(cfg: dict) -> dict:
     coords = cfg.get("geometry", {}).get("corridor", [])
     reaches = []
-    # Split corridor roughly into reach segments by gauge order
-    # Points: MIL ... GRF ... SJB ... SDP ... SWA
-    # Indices approximate
+    # Corridor vertices:
+    # 0: MIL, 4: GRF, 7: SJB, 9: SDP, 11: SWA.
+    # Slice end is inclusive of downstream node index (so b = node_idx + 1)
+    # to ensure continuous connected reach LineStrings with zero gaps.
     splits = {
-        "R1": (0, 4),
-        "R2A": (4, 7),
-        "R2B3": (7, 9),
+        "R1": (0, 5),
+        "R2A": (4, 8),
+        "R2B3": (7, 10),
         "R4A": (9, 12),
     }
     for r in cfg["reaches"]:
@@ -55,7 +57,7 @@ def build_geometry(cfg: dict) -> dict:
                 "id": r["id"],
                 "name": r["name"],
                 "coordinates": seg,
-                "forecast": r["forecast"],
+                "forecast": bool(r["forecast"]),
                 "label": r["label"],
             }
         )
@@ -66,8 +68,8 @@ def build_geometry(cfg: dict) -> dict:
             {
                 "id": n["id"],
                 "name": n["name"],
-                "lon": g["lon"],
-                "lat": g["lat"],
+                "lon": float(g["lon"]),
+                "lat": float(g["lat"]),
             }
         )
     return {"reaches": reaches, "nodes": nodes, "provenance": "schematic"}
