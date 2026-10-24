@@ -16,6 +16,14 @@ function fmt(n: number | null | undefined, digits = 0): string {
   return n.toFixed(digits);
 }
 
+/** Interval like "-12 to 8" so a negative lo never looks like "-12-8". */
+function fmtRange(lo: number | null | undefined, hi: number | null | undefined, digits = 0): string {
+  if (lo == null || hi == null || Number.isNaN(lo) || Number.isNaN(hi)) return "—";
+  const a = lo.toFixed(digits);
+  const b = hi.toFixed(digits);
+  return `${a} to ${b}`;
+}
+
 function skillClass(s: number): string {
   if (s > 0.02) return "positive";
   if (s < -0.02) return "negative";
@@ -83,10 +91,8 @@ export default function App() {
           <div className="hint">Above recent loss across flagged reaches</div>
         </div>
         <div className={`metric ${ (worst.p50 ?? 0) > 5 ? "negative" : "neutral"}`}>
-          <div className="label">Worst-node shortfall</div>
-          <div className="value">
-            {fmt(worst.p10, 0)}–{fmt(worst.p90, 0)} cfs
-          </div>
+          <div className="label">Worst-node shortfall (80%)</div>
+          <div className="value">{fmtRange(worst.p10, worst.p90, 0)} cfs</div>
           <div className="hint">
             {worst.name ?? "—"} · median {fmt(worst.p50, 0)} vs expected arrival
           </div>
@@ -167,16 +173,11 @@ export default function App() {
               <div className="alert" key={i}>{a}</div>
             ))}
             <button
-              style={{
-                marginTop: 8,
-                background: "transparent",
-                border: "1px solid var(--border)",
-                color: "var(--text)",
-                borderRadius: 8,
-                padding: "0.35rem 0.6rem",
-                cursor: "pointer",
-              }}
-              onClick={() => {
+              type="button"
+              className="evidence-btn"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
                 setSelected("evidence");
                 setDrawerOpen(true);
               }}
@@ -188,11 +189,19 @@ export default function App() {
       </div>
 
       {drawerOpen && (
-        <DetailDrawer
-          bundle={bundle}
-          selected={selected}
-          onClose={() => setDrawerOpen(false)}
-        />
+        <>
+          <button
+            type="button"
+            className="drawer-backdrop"
+            aria-label="Close drawer"
+            onClick={() => setDrawerOpen(false)}
+          />
+          <DetailDrawer
+            bundle={bundle}
+            selected={selected}
+            onClose={() => setDrawerOpen(false)}
+          />
+        </>
       )}
     </div>
   );

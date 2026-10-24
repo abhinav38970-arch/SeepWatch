@@ -157,17 +157,41 @@ html, body, #root { height: 100%; margin: 0; background: var(--bg); color: var(-
 .chart-wrap { min-height: 180px; height: 220px; }
 .chart-note { color: var(--muted); font-size: 0.72rem; margin-top: 0.35rem; }
 
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  background: rgba(4, 8, 16, 0.55);
+  cursor: pointer;
+}
+
 .drawer {
   position: fixed;
   right: 0; top: 0; bottom: 0;
   width: min(420px, 100%);
   background: #0e1626;
   border-left: 1px solid var(--border);
-  z-index: 20;
+  z-index: 50;
   padding: 1rem;
   overflow: auto;
   box-shadow: -12px 0 40px rgba(0,0,0,0.35);
 }
+
+.evidence-btn {
+  margin-top: 8px;
+  background: rgba(61, 214, 198, 0.12);
+  border: 1px solid #2a7f76;
+  color: var(--accent);
+  border-radius: 8px;
+  padding: 0.45rem 0.75rem;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+}
+.evidence-btn:hover { background: rgba(61, 214, 198, 0.22); }
 .drawer header { display: flex; justify-content: space-between; align-items: start; gap: 1rem; }
 .drawer h3 { margin: 0; }
 .drawer button {

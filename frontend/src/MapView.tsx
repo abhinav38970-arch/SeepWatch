@@ -8,14 +8,13 @@ function reachColor(
   status: string
 ): string {
   if (status === "no_forecast" || status === "flood_no_forecast") return "#475569";
-  // Color by forecast loss magnitude (more negative = hotter). Excess amplifies.
   const loss = forecastLoss ?? 0;
   const ex = excess ?? 0;
   const heat = -loss + Math.max(0, ex);
   if (heat > 120) return "#f07178";
   if (heat > 60) return "#f0b429";
   if (heat > 20) return "#3dd6c6";
-  if (loss > 10) return "#6bcb8b"; // forecast gain / recovery
+  if (loss > 10) return "#6bcb8b";
   return "#3dd6c6";
 }
 
@@ -34,10 +33,21 @@ type Props = {
   onSelectNode: (id: string) => void;
 };
 
-export default function MapView({ bundle, shortfallByNode, onSelectReach, onSelectNode }: Props) {
+export default function MapView({
+  bundle,
+  shortfallByNode,
+  onSelectReach,
+  onSelectNode,
+}: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
+  const markersRef = useRef<maplibregl.Marker[]>([]);
+  const reachCb = useRef(onSelectReach);
+  const nodeCb = useRef(onSelectNode);
+  reachCb.current = onSelectReach;
+  nodeCb.current = onSelectNode;
 
+  // Create map once
   useEffect(() => {
     if (!ref.current || mapRef.current) return;
 
@@ -45,6 +55,8 @@ export default function MapView({ bundle, shortfallByNode, onSelectReach, onSele
       container: ref.current,
       style: {
         version: 8,
+        // glyphs required if we ever add symbol layers; keep for safety
+        glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
         sources: {
           osm: {
             type: "raster",
@@ -61,7 +73,31 @@ export default function MapView({ bundle, shortfallByNode, onSelectReach, onSele
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
     mapRef.current = map;
 
-    map.on("load", () => {
+    map.on("click", "reaches-line", (e) => {
+      const id = e.features?.[0]?.properties?.id;
+      if (id) reachCb.current(String(id));
+    });
+    map.on("mouseenter", "reaches-line", () => {
+      map.getCanvas().style.cursor = "pointer";
+    });
+    map.on("mouseleave", "reaches-line", () => {
+      map.getCanvas().style.cursor = "";
+    });
+
+    return () => {
+      markersRef.current.forEach((m) => m.remove());
+      markersRef.current = [];
+      map.remove();
+      mapRef.current = null;
+    };
+  }, []);
+
+  // Update reach lines + node markers when data changes
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const apply = () => {
       const colorById = Object.fromEntries(
         bundle.reach_colors.map((r) => [
           r.id,
@@ -69,95 +105,74 @@ export default function MapView({ bundle, shortfallByNode, onSelectReach, onSele
         ])
       );
 
-      const reachFeatures = bundle.geometry.reaches.map((r) => ({
-        type: "Feature" as const,
-        properties: {
-          id: r.id,
-          name: r.name,
-          color: colorById[r.id] ?? "#64748b",
-          label: r.label,
-        },
-        geometry: {
-          type: "LineString" as const,
-          coordinates: r.coordinates,
-        },
-      }));
-
-      map.addSource("reaches", {
-        type: "geojson",
-        data: { type: "FeatureCollection", features: reachFeatures },
-      });
-      map.addLayer({
-        id: "reaches-line",
-        type: "line",
-        source: "reaches",
-        paint: {
-          "line-color": ["get", "color"],
-          "line-width": 5,
-          "line-opacity": 0.95,
-        },
-      });
-
-      const nodeFeatures = bundle.geometry.nodes.map((n) => {
-        const s = shortfallByNode.get(n.id);
-        return {
+      const reachFeatures = bundle.geometry.reaches
+        .filter((r) => Array.isArray(r.coordinates) && r.coordinates.length >= 2)
+        .map((r) => ({
           type: "Feature" as const,
           properties: {
-            id: n.id,
-            name: n.name,
-            color: s ? shortfallColor(s.shortfall_p50) : "#94a3b8",
-            shortfall: s ? s.shortfall_p50 : 0,
+            id: r.id,
+            name: r.name,
+            color: colorById[r.id] ?? "#64748b",
+            label: r.label,
           },
-          geometry: { type: "Point" as const, coordinates: [n.lon, n.lat] },
-        };
-      });
+          geometry: {
+            type: "LineString" as const,
+            coordinates: r.coordinates,
+          },
+        }));
 
-      map.addSource("nodes", {
-        type: "geojson",
-        data: { type: "FeatureCollection", features: nodeFeatures },
-      });
-      map.addLayer({
-        id: "nodes-circle",
-        type: "circle",
-        source: "nodes",
-        paint: {
-          "circle-radius": 8,
-          "circle-color": ["get", "color"],
-          "circle-stroke-width": 2,
-          "circle-stroke-color": "#0b1220",
-        },
-      });
-      map.addLayer({
-        id: "nodes-label",
-        type: "symbol",
-        source: "nodes",
-        layout: {
-          "text-field": ["get", "id"],
-          "text-size": 11,
-          "text-offset": [0, 1.2],
-        },
-        paint: { "text-color": "#e8eefc", "text-halo-color": "#0b1220", "text-halo-width": 1.2 },
-      });
+      const fc = { type: "FeatureCollection" as const, features: reachFeatures };
+      const existing = map.getSource("reaches") as maplibregl.GeoJSONSource | undefined;
+      if (existing) {
+        existing.setData(fc);
+      } else {
+        map.addSource("reaches", { type: "geojson", data: fc });
+        map.addLayer({
+          id: "reaches-line",
+          type: "line",
+          source: "reaches",
+          paint: {
+            "line-color": ["get", "color"],
+            "line-width": 5,
+            "line-opacity": 0.95,
+          },
+        });
+      }
 
-      map.on("click", "reaches-line", (e) => {
-        const id = e.features?.[0]?.properties?.id;
-        if (id) onSelectReach(String(id));
-      });
-      map.on("click", "nodes-circle", (e) => {
-        const id = e.features?.[0]?.properties?.id;
-        if (id) onSelectNode(String(id));
-      });
-      map.on("mouseenter", "reaches-line", () => { map.getCanvas().style.cursor = "pointer"; });
-      map.on("mouseleave", "reaches-line", () => { map.getCanvas().style.cursor = ""; });
-      map.on("mouseenter", "nodes-circle", () => { map.getCanvas().style.cursor = "pointer"; });
-      map.on("mouseleave", "nodes-circle", () => { map.getCanvas().style.cursor = ""; });
-    });
-
-    return () => {
-      map.remove();
-      mapRef.current = null;
+      // HTML markers avoid glyph/symbol-layer validation errors
+      markersRef.current.forEach((m) => m.remove());
+      markersRef.current = [];
+      for (const n of bundle.geometry.nodes) {
+        const s = shortfallByNode.get(n.id);
+        const color = s ? shortfallColor(s.shortfall_p50) : "#94a3b8";
+        const el = document.createElement("button");
+        el.type = "button";
+        el.className = "map-node";
+        el.textContent = n.id;
+        el.style.cssText = [
+          `background:${color}`,
+          "color:#0b1220",
+          "border:2px solid #0b1220",
+          "border-radius:999px",
+          "padding:2px 7px",
+          "font:700 11px/1.2 IBM Plex Sans, system-ui, sans-serif",
+          "cursor:pointer",
+          "box-shadow:0 1px 4px rgba(0,0,0,0.35)",
+        ].join(";");
+        el.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          nodeCb.current(n.id);
+        });
+        const marker = new maplibregl.Marker({ element: el })
+          .setLngLat([n.lon, n.lat])
+          .addTo(map);
+        markersRef.current.push(marker);
+      }
     };
-  }, [bundle, shortfallByNode, onSelectReach, onSelectNode]);
+
+    if (map.isStyleLoaded()) apply();
+    else map.once("load", apply);
+  }, [bundle, shortfallByNode]);
 
   return <div id="map" ref={ref} />;
 }
