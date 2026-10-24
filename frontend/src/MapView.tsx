@@ -33,6 +33,14 @@ function midpoint(coords: number[][]): [number, number] {
   ];
 }
 
+/** Pixel offsets so reach pills don't sit under node markers at endpoints. */
+const REACH_PILL_OFFSET: Record<string, [number, number]> = {
+  R1: [16, -20],
+  R2A: [0, -14],
+  R2B3: [0, 14],
+  R4A: [-18, -18],
+};
+
 type Props = {
   bundle: Bundle;
   shortfallByNode: Map<string, Bundle["nodes_shortfall"][0]>;
@@ -53,6 +61,7 @@ export default function MapView({
   const markersRef = useRef<Array<{ id: string; el: HTMLButtonElement; marker: maplibregl.Marker }>>([]);
   const reachCb = useRef(onSelectReach);
   const nodeCb = useRef(onSelectNode);
+  const didFitBounds = useRef(false);
   reachCb.current = onSelectReach;
   nodeCb.current = onSelectNode;
 
@@ -81,25 +90,40 @@ export default function MapView({
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
     mapRef.current = map;
 
-    // Query rendered reach features on click with an 8px bounding box for easy clicking
-    map.on("click", (e) => {
-      const layers = ["reaches-hit", "reaches-line"].filter((l) => map.getLayer(l));
-      if (!layers.length) return;
+    const reachLayers = () =>
+      ["reaches-hit", "reaches-line"].filter((l) => map.getLayer(l));
+
+    const pickReachAt = (point: maplibregl.Point) => {
+      const layers = reachLayers();
+      if (!layers.length) return null;
       const bbox: [maplibregl.PointLike, maplibregl.PointLike] = [
-        [e.point.x - 8, e.point.y - 8],
-        [e.point.x + 8, e.point.y + 8],
+        [point.x - 14, point.y - 14],
+        [point.x + 14, point.y + 14],
       ];
       const feats = map.queryRenderedFeatures(bbox, { layers });
       const id = feats?.[0]?.properties?.id;
-      if (id) reachCb.current(String(id));
+      return id ? String(id) : null;
+    };
+
+    const onReachLayerClick = (e: maplibregl.MapLayerMouseEvent) => {
+      const id = e.features?.[0]?.properties?.id;
+      if (id) {
+        e.originalEvent.preventDefault();
+        reachCb.current(String(id));
+      }
+    };
+
+    map.on("click", (e) => {
+      const id = pickReachAt(e.point);
+      if (id) reachCb.current(id);
     });
 
     map.on("mousemove", (e) => {
-      const layers = ["reaches-hit", "reaches-line"].filter((l) => map.getLayer(l));
-      if (!layers.length) return;
-      const feats = map.queryRenderedFeatures(e.point, { layers });
-      map.getCanvas().style.cursor = feats.length > 0 ? "pointer" : "";
+      map.getCanvas().style.cursor = pickReachAt(e.point) ? "pointer" : "";
     });
+
+    map.on("click", "reaches-hit", onReachLayerClick);
+    map.on("click", "reaches-line", onReachLayerClick);
 
     return () => {
       markersRef.current.forEach((m) => m.marker.remove());
@@ -174,10 +198,26 @@ export default function MapView({
           source: "reaches",
           paint: {
             "line-color": "#ffffff",
-            "line-width": 22,
-            "line-opacity": 0.01,
+            "line-width": 28,
+            "line-opacity": 0.001,
           },
         });
+      }
+
+      if (!didFitBounds.current) {
+        const bounds = new maplibregl.LngLatBounds();
+        for (const r of bundle.geometry.reaches) {
+          for (const c of r.coordinates) {
+            bounds.extend(c as [number, number]);
+          }
+        }
+        for (const n of bundle.geometry.nodes) {
+          bounds.extend([n.lon, n.lat]);
+        }
+        if (!bounds.isEmpty()) {
+          map.fitBounds(bounds, { padding: 72, maxZoom: 9.4, duration: 0 });
+          didFitBounds.current = true;
+        }
       }
 
       markersRef.current.forEach((m) => m.marker.remove());
@@ -199,16 +239,19 @@ export default function MapView({
           `color:${c}`,
           `border:1.5px solid ${c}`,
           "border-radius:6px",
-          "padding:1px 5px",
-          "font:600 10px/1.2 IBM Plex Sans, system-ui, sans-serif",
+          "padding:2px 6px",
+          "font:600 11px/1.2 IBM Plex Sans, system-ui, sans-serif",
           "cursor:pointer",
           "box-shadow:0 1px 4px rgba(0,0,0,0.45)",
+          "z-index:2",
+          "position:relative",
         ].join(";");
         el.addEventListener("click", (ev) => {
           ev.stopPropagation();
           reachCb.current(r.id);
         });
-        const marker = new maplibregl.Marker({ element: el, offset: [0, -10] })
+        const pillOffset = REACH_PILL_OFFSET[r.id] ?? [0, -12];
+        const marker = new maplibregl.Marker({ element: el, offset: pillOffset })
           .setLngLat([lon, lat])
           .addTo(map);
         markersRef.current.push({ id: r.id, el, marker });
