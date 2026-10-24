@@ -1,0 +1,89 @@
+"""Leak-safe feature construction as-of forecast date."""
+from __future__ import annotations
+
+import numpy as np
+import pandas as pd
+
+
+def _doy_cycle(idx: pd.DatetimeIndex) -> tuple[pd.Series, pd.Series]:
+    doy = idx.dayofyear.astype(float)
+    return np.sin(2 * np.pi * doy / 365.25), np.cos(2 * np.pi * doy / 365.25)
+
+
+def wetness_proxy(mil_inflow: pd.Series) -> pd.Series:
+    """Cumulative reservoir inflow since March 1 within each water year-ish season."""
+    # Restoration year ~ March 1 – Feb 28
+    s = mil_inflow.copy()
+    # Group by restoration year starting March 1
+    ry = s.index.to_series().apply(lambda d: d.year if d.month >= 3 else d.year - 1)
+    cum = s.groupby(ry).cumsum()
+    return cum.rename("wetness")
+
+
+def build_feature_frame(
+    panel: pd.DataFrame,
+    labels: pd.DataFrame,
+    reach: dict,
+    horizons: list[int],
+) -> pd.DataFrame:
+    """One row per (date, horizon) for a reach. Features use only data as-of date."""
+    rid = reach["id"]
+    up_col = reach["upstream"]
+    loss = labels.xs(rid, level="reach_id")["loss_cfs"]
+    up = panel[up_col]
+    flood = panel["flood"] if "flood" in panel.columns else pd.Series(False, index=panel.index)
+
+    sin_doy, cos_doy = _doy_cycle(panel.index)
+    wet = wetness_proxy(panel["MIL_INFLOW"]) if "MIL_INFLOW" in panel.columns else pd.Series(0.0, index=panel.index)
+
+    # Antecedent volumes (cfs-days ≈ proportional to AF)
+    vol7 = up.rolling(7, min_periods=3).sum()
+    vol30 = up.rolling(30, min_periods=10).sum()
+    vol90 = up.rolling(90, min_periods=30).sum()
+
+    up_lag7 = up.shift(7)
+    ramp = ((up / up_lag7) - 1.0).abs() > 0.5
+    ramp = ramp & ((up >= 50) | (up_lag7 >= 50))
+
+    loss_lag1 = loss.shift(1)
+    loss_mean7 = loss.rolling(7, min_periods=3).mean()
+    loss_std7 = loss.rolling(7, min_periods=3).std()
+    trend7 = up - up.shift(7)
+
+    rows = []
+    for h in horizons:
+        # Deployable: future upstream held at current
+        up_future_deploy = up
+        # What-if: actual future upstream
+        up_future_whatif = up.shift(-h)
+
+        base = pd.DataFrame(
+            {
+                "date": panel.index,
+                "reach_id": rid,
+                "horizon": h,
+                "y": loss.shift(-h),
+                "y_now": loss,
+                "upstream_now": up,
+                "upstream_future_deploy": up_future_deploy,
+                "upstream_future_whatif": up_future_whatif,
+                "trend7": trend7,
+                "ramp": ramp.astype(int),
+                "vol7": vol7,
+                "vol30": vol30,
+                "vol90": vol90,
+                "wetness": wet,
+                "sin_doy": sin_doy,
+                "cos_doy": cos_doy,
+                "loss_lag1": loss_lag1,
+                "loss_mean7": loss_mean7,
+                "loss_std7": loss_std7,
+                "flood": flood.astype(bool),
+                "length_miles": float(reach.get("length_miles") or 0),
+            }
+        )
+        rows.append(base)
+
+    feat = pd.concat(rows, ignore_index=True)
+    # Drop flood days and missing targets for training; callers may filter further
+    return feat

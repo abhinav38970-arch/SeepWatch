@@ -1,0 +1,160 @@
+# Config-driven reach pairs. A district plugs in by adding rows.
+# Provenance: measured (SJRRP public gauges).
+
+gauges:
+  MIL:
+    name: Friant Dam release
+    cdec_id: MIL
+    sensor: 85
+    duration: D
+    lat: 37.001
+    lon: -119.705
+    role: upstream
+  MIL_INFLOW:
+    name: Friant Dam reservoir inflow
+    cdec_id: MIL
+    sensor: 76
+    duration: D
+    lat: 37.001
+    lon: -119.705
+    role: wetness
+  GRF:
+    name: Gravelly Ford
+    cdec_id: GRF
+    sensor: 20
+    duration: H
+    lat: 36.785
+    lon: -120.162
+    role: node
+  SJB:
+    name: Below Chowchilla Bifurcation
+    cdec_id: SJB
+    sensor: 20
+    duration: H
+    lat: 36.978
+    lon: -120.505
+    role: node
+  CBP:
+    name: Chowchilla Bypass
+    cdec_id: CBP
+    sensor: 20
+    duration: H
+    lat: 36.978
+    lon: -120.505
+    role: bypass
+  SDP:
+    name: Near Dos Palos (Sack Dam area)
+    cdec_id: SDP
+    sensor: 20
+    duration: D
+    lat: 36.983
+    lon: -120.650
+    role: node
+  SWA:
+    name: Washington Road
+    cdec_id: SWA
+    sensor: 20
+    duration: D
+    lat: 37.100
+    lon: -120.750
+    role: node
+  MEN:
+    name: Near Mendota
+    cdec_id: MEN
+    sensor: 20
+    duration: H
+    lat: 36.793
+    lon: -120.383
+    role: context
+
+reaches:
+  - id: R1
+    name: Reach 1 (Friant → Gravelly Ford)
+    upstream: MIL
+    downstream: GRF
+    lag_days: 3
+    extra_downstream: []
+    length_miles: 38
+    forecast: true
+    label: unexplained_loss
+    color_priority: 2
+  - id: R2A
+    name: Reach 2A (Gravelly Ford → Bifurcation)
+    upstream: GRF
+    downstream: SJB
+    lag_days: 1
+    extra_downstream: [CBP]
+    length_miles: 14
+    forecast: true
+    label: measured
+    color_priority: 1
+  - id: R2B3
+    name: Reach 2B+3 (Bifurcation → Sack Dam)
+    upstream: SJB
+    downstream: SDP
+    lag_days: 1
+    extra_downstream: []
+    length_miles: 24
+    forecast: true
+    label: measured
+    color_priority: 2
+  - id: R4A
+    name: Reach 4A (Sack Dam → Washington Rd)
+    upstream: SDP
+    downstream: SWA
+    lag_days: 1
+    extra_downstream: []
+    length_miles: 18
+    forecast: false
+    label: context_noise_floor
+    color_priority: 3
+
+flood:
+  cbp_threshold_cfs: 5.0
+  upstream_threshold_cfs: 1600.0
+
+qc:
+  min_hourly_count: 20
+  gauge_uncertainty_pct: 5.0
+
+train:
+  start: "2016-01-01"
+  end: "2024-12-31"
+test:
+  start: "2025-01-01"
+
+horizons: [1, 2, 3, 4, 5, 6, 7]
+
+nodes:
+  - id: GRF
+    name: Gravelly Ford
+    gauge: GRF
+    upstream_reaches: [R1]
+  - id: SJB
+    name: Bifurcation
+    gauge: SJB
+    upstream_reaches: [R1, R2A]
+  - id: SDP
+    name: Sack Dam
+    gauge: SDP
+    upstream_reaches: [R1, R2A, R2B3]
+  - id: SWA
+    name: Washington Road
+    gauge: SWA
+    upstream_reaches: [R1, R2A, R2B3, R4A]
+
+geometry:
+  # Approximate centerlines for the map (lon, lat). Schematic, labeled as such.
+  corridor:
+    - [-119.705, 37.001]
+    - [-119.780, 36.950]
+    - [-119.900, 36.880]
+    - [-120.050, 36.820]
+    - [-120.162, 36.785]
+    - [-120.300, 36.850]
+    - [-120.400, 36.920]
+    - [-120.505, 36.978]
+    - [-120.580, 36.980]
+    - [-120.650, 36.983]
+    - [-120.700, 37.040]
+    - [-120.750, 37.100]

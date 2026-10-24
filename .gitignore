@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+node_modules/
+data/raw/
+data/processed/
+artifacts/*.pkl
+*.egg-info/
+.DS_Store
+.env
+uv.lock
